@@ -1,0 +1,353 @@
+
+import { Hono } from "npm:hono";
+import { cors } from "npm:hono/cors";
+import { logger } from "npm:hono/logger";
+import { createClient } from "npm:@supabase/supabase-js";
+import * as kv from "./kv_store.tsx";
+
+const app = new Hono();
+
+app.use("*", cors());
+app.use("*", logger(console.log));
+
+const BASE_PATH = "/make-server-31bfbcca";
+
+// Helper to get Supabase Client
+const getSupabase = () => {
+  return createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+  );
+};
+
+// Helper to extract device name from User-Agent
+function extractDeviceName(userAgent: string): string {
+  if (userAgent.includes('Android')) return 'Android Device';
+  if (userAgent.includes('iPad')) return 'iPad';
+  if (userAgent.includes('iPhone')) return 'iPhone';
+  if (userAgent.includes('Windows')) return 'Windows PC';
+  if (userAgent.includes('Macintosh') || userAgent.includes('Mac OS')) return 'Mac';
+  if (userAgent.includes('Linux')) return 'Linux Device';
+  if (userAgent.includes('Smart-TV') || userAgent.includes('SmartTV')) return 'Smart TV';
+  if (userAgent.includes('PlayStation')) return 'PlayStation';
+  if (userAgent.includes('Xbox')) return 'Xbox';
+  return `Device ${Math.floor(Math.random() * 1000)}`;
+}
+
+// --- Storage Helper ---
+async function ensureBucket(bucketName: string) {
+  const supabase = getSupabase();
+  const { data: buckets } = await supabase.storage.listBuckets();
+  const exists = buckets?.some((b) => b.name === bucketName);
+  if (!exists) {
+    await supabase.storage.createBucket(bucketName, {
+      public: false,
+      fileSizeLimit: 52428800, // 50MB
+    });
+  }
+}
+
+// --- Content Routes ---
+
+// List Content
+app.get(`${BASE_PATH}/content`, async (c) => {
+  try {
+    const keys = await kv.getByPrefix("content:");
+    // kv.getByPrefix returns array of values? No, instructions say "mget and getByPrefix return an array of values."
+    // Let's assume it returns the values directly.
+    return c.json(keys);
+  } catch (e) {
+    console.error(e);
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// Create Content Metadata
+app.post(`${BASE_PATH}/content`, async (c) => {
+  try {
+    const body = await c.req.json();
+    const id = crypto.randomUUID();
+    const newContent = { ...body, id, createdAt: new Date().toISOString() };
+    await kv.set(`content:${id}`, newContent);
+    return c.json(newContent);
+  } catch (e) {
+    console.error(e);
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// Get Signed Upload URL
+app.post(`${BASE_PATH}/storage/sign`, async (c) => {
+  try {
+    const { fileName, fileType } = await c.req.json();
+    const bucketName = "make-31bfbcca-content";
+    await ensureBucket(bucketName);
+
+    const supabase = getSupabase();
+    const path = `${crypto.randomUUID()}-${fileName}`;
+    const { data, error } = await supabase.storage
+      .from(bucketName)
+      .createSignedUploadUrl(path);
+
+    if (error) throw error;
+
+    // Return upload URL and path. Read URL will be generated after upload.
+    return c.json({ uploadUrl: data.signedUrl, path, token: data.token });
+  } catch (e) {
+    console.error(e);
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// Get Signed Read URL for existing file
+app.post(`${BASE_PATH}/storage/read-url`, async (c) => {
+  try {
+    const { path } = await c.req.json();
+    const bucketName = "make-31bfbcca-content";
+    const supabase = getSupabase();
+
+    const { data, error } = await supabase.storage
+      .from(bucketName)
+      .createSignedUrl(path, 60 * 60 * 24 * 365); // 1 year
+
+    if (error) throw error;
+
+    return c.json({ readUrl: data.signedUrl });
+  } catch (e) {
+    console.error(e);
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+
+// --- Screen Routes ---
+
+// List Screens
+app.get(`${BASE_PATH}/screens`, async (c) => {
+  try {
+    const screens = await kv.getByPrefix("screen:");
+    return c.json(screens);
+  } catch (e) {
+    console.error(e);
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// Get Screen
+app.get(`${BASE_PATH}/screens/:id`, async (c) => {
+  try {
+    const id = c.req.param("id");
+    const screen = await kv.get(`screen:${id}`);
+    if (!screen) return c.json({ error: "Not found" }, 404);
+    return c.json(screen);
+  } catch (e) {
+    console.error(e);
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// Create Screen
+app.post(`${BASE_PATH}/screens`, async (c) => {
+  try {
+    const body = await c.req.json();
+    const id = crypto.randomUUID();
+    const newScreen = {
+      ...body,
+      id,
+      content: [], // Array of content IDs or objects
+      createdAt: new Date().toISOString()
+    };
+    await kv.set(`screen:${id}`, newScreen);
+    return c.json(newScreen);
+  } catch (e) {
+    console.error(e);
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// Update Screen (e.g. add content)
+app.put(`${BASE_PATH}/screens/:id`, async (c) => {
+  try {
+    const id = c.req.param("id");
+    const body = await c.req.json();
+    const existing = await kv.get(`screen:${id}`);
+    if (!existing) return c.json({ error: "Not found" }, 404);
+
+    const updated = { ...existing, ...body };
+    await kv.set(`screen:${id}`, updated);
+    return c.json(updated);
+  } catch (e) {
+    console.error(e);
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// Delete Screen
+app.delete(`${BASE_PATH}/screens/:id`, async (c) => {
+  try {
+    const id = c.req.param("id");
+    await kv.del(`screen:${id}`);
+    // Optional: unassign devices
+    const devices = await kv.getByPrefix("device:");
+    for (const device of devices) {
+      if (device.screenId === id) {
+        await kv.set(`device:${device.id}`, { ...device, screenId: null });
+      }
+    }
+    return c.json({ success: true });
+  } catch (e) {
+    console.error(e);
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+
+// --- Device Routes ---
+
+// Register Device (Player calls this)
+app.post(`${BASE_PATH}/devices/register`, async (c) => {
+  try {
+    // Generate a 6-digit PIN
+    const pin = Math.floor(100000 + Math.random() * 900000).toString();
+    const id = crypto.randomUUID();
+
+    // Capture IP address from request headers
+    const ipAddress = c.req.header('x-forwarded-for') ||
+      c.req.header('x-real-ip') ||
+      c.req.header('cf-connecting-ip') || // Cloudflare
+      'unknown';
+
+    // Capture device info from User-Agent
+    const userAgent = c.req.header('user-agent') || 'Unknown Device';
+    const deviceName = extractDeviceName(userAgent);
+
+    const newDevice = {
+      id,
+      pin,
+      name: deviceName,
+      ipAddress,
+      userAgent,
+      status: "pending", // pending, online, offline
+      screenId: null,
+      lastSeen: new Date().toISOString(),
+      resolution: null,
+      registeredAt: new Date().toISOString()
+    };
+    await kv.set(`device:${id}`, newDevice);
+    return c.json(newDevice);
+  } catch (e) {
+    console.error(e);
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// Heartbeat / Status (Player calls this)
+app.get(`${BASE_PATH}/devices/:id/status`, async (c) => {
+  try {
+    const id = c.req.param("id");
+    const device = await kv.get(`device:${id}`);
+    if (!device) return c.json({ error: "Not found" }, 404);
+
+    // Update last seen
+    const updated = { ...device, lastSeen: new Date().toISOString(), status: "online" };
+    await kv.set(`device:${id}`, updated);
+
+    // If assigned to a screen, fetch screen details
+    let screen = null;
+    if (device.screenId) {
+      screen = await kv.get(`screen:${device.screenId}`);
+    }
+
+    return c.json({ device: updated, screen });
+  } catch (e) {
+    console.error(e);
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// List Devices (Admin)
+app.get(`${BASE_PATH}/devices`, async (c) => {
+  try {
+    const devices = await kv.getByPrefix("device:");
+    return c.json(devices);
+  } catch (e) {
+    console.error(e);
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// Claim Device (Admin)
+app.post(`${BASE_PATH}/devices/claim`, async (c) => {
+  try {
+    const { pin, name } = await c.req.json();
+    const devices = await kv.getByPrefix("device:");
+    const device = devices.find((d: any) => d.pin === pin && d.status === "pending");
+
+    if (!device) {
+      return c.json({ error: "Invalid PIN or device not found" }, 400);
+    }
+
+    const updated = { ...device, name, status: "online", pin: null }; // Clear PIN after claim
+    await kv.set(`device:${device.id}`, updated);
+    return c.json(updated);
+  } catch (e) {
+    console.error(e);
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// Update Device (Assign screen, etc)
+app.put(`${BASE_PATH}/devices/:id`, async (c) => {
+  try {
+    const id = c.req.param("id");
+    const body = await c.req.json();
+    const device = await kv.get(`device:${id}`);
+    if (!device) return c.json({ error: "Not found" }, 404);
+
+    const updated = { ...device, ...body };
+    await kv.set(`device:${id}`, updated);
+    return c.json(updated);
+  } catch (e) {
+    console.error(e);
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// Delete Device
+app.delete(`${BASE_PATH}/devices/:id`, async (c) => {
+  try {
+    const id = c.req.param("id");
+    await kv.del(`device:${id}`);
+    return c.json({ success: true });
+  } catch (e) {
+    console.error(e);
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// Stats
+app.get(`${BASE_PATH}/dashboard/stats`, async (c) => {
+  try {
+    const screens = await kv.getByPrefix("screen:");
+    const devices = await kv.getByPrefix("device:");
+    const content = await kv.getByPrefix("content:");
+
+    const onlineDevices = devices.filter((d: any) => {
+      const lastSeen = new Date(d.lastSeen).getTime();
+      const now = new Date().getTime();
+      return (now - lastSeen) < 60000; // 1 minute threshold
+    });
+
+    return c.json({
+      screensCount: screens.length,
+      devicesCount: devices.length,
+      onlineDevicesCount: onlineDevices.length,
+      contentCount: content.length
+    });
+  } catch (e) {
+    console.error(e);
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+Deno.serve(app.fetch);
