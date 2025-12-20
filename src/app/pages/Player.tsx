@@ -46,10 +46,24 @@ export function Player() {
 
   const initDevice = async () => {
     try {
+      // Fetch client IP from frontend (more reliable than backend headers)
+      let clientIP = 'unknown';
+      try {
+        const ipResponse = await fetch('https://api.ipify.org?format=json');
+        const ipData = await ipResponse.json();
+        clientIP = ipData.ip;
+        console.log('Client IP detected:', clientIP);
+      } catch (e) {
+        console.warn('Could not detect IP, using unknown');
+      }
+
       // Always call register - backend handles IP checking
       // If IP exists, returns existing device
       // If new IP, creates room with PIN
-      const device = await apiFetch("/devices/register", { method: "POST" });
+      const device = await apiFetch("/devices/register", {
+        method: "POST",
+        body: JSON.stringify({ clientIP }) // Send IP explicitly
+      });
       setDevice(device);
 
       console.log('Device initialized:', device.status, 'IP:', device.ipAddress);

@@ -255,13 +255,17 @@ app.delete(`${BASE_PATH}/screens/:id`, async (c) => {
 // Register Device (Player calls this) - IP-BASED
 app.post(`${BASE_PATH}/devices/register`, async (c) => {
   try {
-    // Capture IP address - prioritize Vercel headers
+    // Get IP from request body (sent by frontend) or headers as fallback
+    const body = await c.req.json().catch(() => ({}));
+    const clientIP = body.clientIP;
+
+    // Fallback to headers if not in body
     const forwardedFor = c.req.header('x-forwarded-for');
     const realIp = c.req.header('x-real-ip');
     const cfConnectingIp = c.req.header('cf-connecting-ip');
 
-    // Extract first IP from comma-separated list
-    let ipAddress = forwardedFor || realIp || cfConnectingIp || 'unknown';
+    // Use clientIP from frontend, or extract from headers
+    let ipAddress = clientIP || forwardedFor || realIp || cfConnectingIp || 'unknown';
     if (ipAddress && ipAddress.includes(',')) {
       ipAddress = ipAddress.split(',')[0].trim();
     }
