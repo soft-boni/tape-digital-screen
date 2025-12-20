@@ -45,34 +45,21 @@ export function Player() {
   }, []);
 
   const initDevice = async () => {
-    let deviceId = localStorage.getItem("tape_device_id");
-
     try {
-      if (!deviceId) {
-        // Register new device
-        const newDevice = await apiFetch("/devices/register", { method: "POST" });
-        deviceId = newDevice.id;
-        localStorage.setItem("tape_device_id", deviceId!);
-        setDevice(newDevice);
-      } else {
-        // Fetch existing status
-        try {
-          const res = await apiFetch(`/devices/${deviceId}/status`);
-          handleStatusUpdate(res);
-        } catch (e) {
-          // If not found (maybe deleted from DB), register again
-          const newDevice = await apiFetch("/devices/register", { method: "POST" });
-          deviceId = newDevice.id;
-          localStorage.setItem("tape_device_id", deviceId!);
-          setDevice(newDevice);
-        }
-      }
+      // Always call register - backend handles IP checking
+      // If IP exists, returns existing device
+      // If new IP, creates room with PIN
+      const device = await apiFetch("/devices/register", { method: "POST" });
+      setDevice(device);
+
+      console.log('Device initialized:', device.status, 'IP:', device.ipAddress);
+
+      // Start polling for updates
+      startPolling(device.id);
     } catch (e) {
       console.error("Device init failed", e);
     } finally {
       setLoading(false);
-      // Start polling
-      startPolling(deviceId!);
     }
   };
 

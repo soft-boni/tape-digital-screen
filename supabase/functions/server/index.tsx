@@ -34,6 +34,18 @@ function extractDeviceName(userAgent: string): string {
   return `Device ${Math.floor(Math.random() * 1000)}`;
 }
 
+// Generate consistent PIN from IP address
+function generatePinFromIP(ipAddress: string): string {
+  // Create hash from IP
+  const hash = ipAddress.split('').reduce((acc, char) => {
+    return acc + char.charCodeAt(0);
+  }, 0);
+
+  // Generate 6-digit PIN (consistent for same IP)
+  const pin = (hash % 900000 + 100000).toString();
+  return pin;
+}
+
 // --- Storage Helper ---
 async function ensureBucket(bucketName: string) {
   const supabase = getSupabase();
