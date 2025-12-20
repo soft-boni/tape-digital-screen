@@ -230,6 +230,36 @@ export function ScreenEditor() {
     }
   };
 
+  const handleDeleteScreen = async () => {
+    if (!screen) return;
+
+    // Confirmation dialog
+    const confirmMessage = `Are you sure you want to delete "${screen.name}"?\n\nThis action cannot be undone. All content assignments and settings will be lost.`;
+
+    if (!confirm(confirmMessage)) return;
+
+    // Double confirmation for safety
+    const doubleConfirm = prompt(
+      `Type "${screen.name}" to confirm deletion:`
+    );
+
+    if (doubleConfirm !== screen.name) {
+      toast.error("Screen name doesn't match. Deletion cancelled.");
+      return;
+    }
+
+    try {
+      await apiFetch(`/screens/${screen.id}`, {
+        method: "DELETE"
+      });
+      toast.success("Screen deleted successfully");
+      // Navigate back to screens list
+      window.location.href = "/screens";
+    } catch (error) {
+      toast.error("Failed to delete screen");
+    }
+  };
+
   const moveItem = useCallback((fromIndex: number, toIndex: number) => {
     setPlaylist((prev) => {
       const updated = [...prev];
@@ -476,8 +506,8 @@ export function ScreenEditor() {
           <div className="flex gap-2 p-1 bg-slate-100 rounded-lg">
             <button
               className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors ${deviceMode === "existing"
-                  ? "bg-white shadow-sm"
-                  : "text-slate-600 hover:text-slate-900"
+                ? "bg-white shadow-sm"
+                : "text-slate-600 hover:text-slate-900"
                 }`}
               onClick={() => setDeviceMode("existing")}
             >
@@ -485,8 +515,8 @@ export function ScreenEditor() {
             </button>
             <button
               className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors ${deviceMode === "new"
-                  ? "bg-white shadow-sm"
-                  : "text-slate-600 hover:text-slate-900"
+                ? "bg-white shadow-sm"
+                : "text-slate-600 hover:text-slate-900"
                 }`}
               onClick={() => setDeviceMode("new")}
             >
