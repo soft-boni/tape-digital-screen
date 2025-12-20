@@ -20,6 +20,34 @@ app.use("*", logger(console.log));
 
 const BASE_PATH = "/make-server-31bfbcca";
 
+// Public endpoints that don't require authentication
+const PUBLIC_ENDPOINTS = [
+  `${BASE_PATH}/devices/register`,  // Player registration
+  `${BASE_PATH}/devices/:id/status` // Player status polling
+];
+
+// Skip auth check for public endpoints
+app.use("*", async (c, next) => {
+  const path = c.req.path;
+
+  // Check if this is a public endpoint
+  const isPublic = PUBLIC_ENDPOINTS.some(pattern => {
+    if (pattern.includes(':id')) {
+      const regex = new RegExp(pattern.replace(':id', '[^/]+'));
+      return regex.test(path);
+    }
+    return path === pattern;
+  });
+
+  if (isPublic) {
+    console.log('Public endpoint accessed:', path);
+    return await next();
+  }
+
+  // For protected endpoints, verify auth (optional - implement if needed)
+  return await next();
+});
+
 // Helper to get Supabase Client
 const getSupabase = () => {
   return createClient(
