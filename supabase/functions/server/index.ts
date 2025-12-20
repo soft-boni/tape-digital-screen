@@ -7,7 +7,15 @@ import * as kv from "./kv_store.tsx";
 
 const app = new Hono();
 
-app.use("*", cors());
+// Enable CORS for Vercel deployment
+app.use("*", cors({
+  origin: [
+    "http://localhost:5173",
+    "https://tape-screen.vercel.app",
+    "https://tape-screen-*.vercel.app" // Preview deployments
+  ],
+  credentials: true,
+}));
 app.use("*", logger(console.log));
 
 const BASE_PATH = "/make-server-31bfbcca";
