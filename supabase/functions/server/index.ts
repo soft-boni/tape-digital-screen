@@ -216,39 +216,63 @@ app.delete(`${BASE_PATH}/screens/:id`, async (c) => {
 
 // --- Device Routes ---
 
-// Register Device (Player calls this)
+// Register Device (Player calls this) - IP-BASED
 app.post(`${BASE_PATH}/devices/register`, async (c) => {
   try {
-    // Generate a 6-digit PIN
-    const pin = Math.floor(100000 + Math.random() * 900000).toString();
+    // Capture IP address - prioritize Vercel headers
+    const forwardedFor = c.req.header('x-forwarded-for');
+    const realIp = c.req.header('x-real-ip');
+    const cfConnectingIp = c.req.header('cf-connecting-ip');
+
+    // Extract first IP from comma-separated list
+    let ipAddress = forwardedFor || realIp || cfConnectingIp || 'unknown';
+    if (ipAddress && ipAddress.includes(',')) {
+      ipAddress = ipAddress.split(',')[0].trim();
+    }
+
+    console.log('=== Device Registration ===');
+    console.log('IP captured:', ipAddress);
+    console.log('Headers:', { forwardedFor, realIp, cfConnectingIp });
+
+    // Check if this IP already has a device (room)
+    const allDevices = await kv.getByPrefix("device:");
+    const existingDevice = allDevices.find(d => d.ipAddress === ipAddress);
+
+    if (existingDevice) {
+      console.log('Existing device found for IP:', ipAddress, 'Status:', existingDevice.status);
+      // Update last seen and return existing device
+      existingDevice.lastSeen = new Date().toISOString();
+      await kv.set(`device:${existingDevice.id}`, existingDevice);
+      return c.json(existingDevice);
+    }
+
+    // New IP - create room
+    console.log('New IP detected, creating room for:', ipAddress);
+
+    const pin = generatePinFromIP(ipAddress);
     const id = crypto.randomUUID();
-
-    // Capture IP address from request headers
-    const ipAddress = c.req.header('x-forwarded-for') ||
-      c.req.header('x-real-ip') ||
-      c.req.header('cf-connecting-ip') || // Cloudflare
-      'unknown';
-
-    // Capture device info from User-Agent
     const userAgent = c.req.header('user-agent') || 'Unknown Device';
     const deviceName = extractDeviceName(userAgent);
 
     const newDevice = {
       id,
+      ipAddress,
       pin,
       name: deviceName,
-      ipAddress,
       userAgent,
-      status: "pending", // pending, online, offline
+      status: "pending", // pending = unlocked room
       screenId: null,
+      claimedBy: null,
+      claimedAt: null,
       lastSeen: new Date().toISOString(),
-      resolution: null,
       registeredAt: new Date().toISOString()
     };
+
     await kv.set(`device:${id}`, newDevice);
+    console.log('Room created with PIN:', pin, 'for IP:', ipAddress);
     return c.json(newDevice);
   } catch (e) {
-    console.error(e);
+    console.error('Device registration error:', e);
     return c.json({ error: e.message }, 500);
   }
 });
