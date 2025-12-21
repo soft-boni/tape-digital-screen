@@ -7,6 +7,7 @@ import { Button } from "../components/ui/button";
 type ViewState = 'not-connected' | 'connected' | 'playing' | 'settings';
 
 export function Player() {
+  const [deviceId, setDeviceId] = useState<string | null>(null);
   const [pin, setPin] = useState<string | null>(null);
   const [viewState, setViewState] = useState<ViewState>('not-connected');
   const [loading, setLoading] = useState(true);
@@ -18,18 +19,27 @@ export function Player() {
   const [brightness, setBrightness] = useState(100);
   const [volume, setVolume] = useState(50);
 
-  // Register device and get PIN on mount
+  // Check for existing device on mount
   useEffect(() => {
-    registerDevice();
+    const storedDeviceId = localStorage.getItem('deviceId');
+
+    if (storedDeviceId) {
+      // Check if this device still exists and is activated
+      setDeviceId(storedDeviceId);
+      checkActivationStatus(storedDeviceId);
+    } else {
+      // No stored device, register new one
+      registerDevice();
+    }
   }, []);
 
-  // Poll for activation status
+  // Poll for activation status (only when not connected and has deviceId)
   useEffect(() => {
-    if (!pin || viewState !== 'not-connected') return;
+    if (!deviceId || viewState !== 'not-connected') return;
 
-    const interval = setInterval(checkActivationStatus, 5000);
+    const interval = setInterval(() => checkActivationStatus(deviceId), 5000);
     return () => clearInterval(interval);
-  }, [pin, viewState]);
+  }, [deviceId, viewState]);
 
   // Auto-advance content
   useEffect(() => {
@@ -52,6 +62,7 @@ export function Player() {
 
   async function registerDevice() {
     try {
+      // Get IP address
       let ipAddress = 'unknown';
       try {
         const ipRes = await fetch('https://api.ipify.org?format=json');
@@ -61,17 +72,16 @@ export function Player() {
         console.warn('Could not detect IP');
       }
 
+      // Register device
       const res = await apiFetch('/player/register', {
         method: 'POST',
         body: JSON.stringify({ ipAddress })
       });
 
+      // Store device ID
+      localStorage.setItem('deviceId', res.deviceId);
+      setDeviceId(res.deviceId);
       setPin(res.pin);
-      if (res.activated) {
-        setViewState('connected');
-        setAccountName(res.accountName || 'User');
-        setDeviceName(res.deviceName || "Samsung 55' Smart Display");
-      }
     } catch (error) {
       console.error('Registration failed:', error);
     } finally {
@@ -79,31 +89,60 @@ export function Player() {
     }
   }
 
-  async function checkActivationStatus() {
-    if (!pin) return;
-
+  async function checkActivationStatus(devId: string) {
     try {
-      const res = await apiFetch(`/player/status?pin=${pin}`);
+      const res = await apiFetch(`/player/status?deviceId=${devId}`);
 
-      if (res.activated && viewState === 'not-connected') {
+      if (res.deleted) {
+        // Device was deleted by admin, register new one
+        localStorage.removeItem('deviceId');
+        setDeviceId(null);
+        registerDevice();
+        return;
+      }
+
+      if (res.activated) {
         setViewState('connected');
         setContent(res.content || []);
         setAccountName(res.accountName || 'User');
         setDeviceName(res.deviceName || "Samsung 55' Smart Display");
       }
+
+      setLoading(false);
     } catch (error) {
       console.error('Status check failed:', error);
+      setLoading(false);
     }
   }
 
   async function syncContent() {
-    if (!pin) return;
+    if (!deviceId) return;
 
     try {
-      const res = await apiFetch(`/player/status?pin=${pin}`);
+      const res = await apiFetch(`/player/status?deviceId=${deviceId}`);
       setContent(res.content || []);
     } catch (error) {
       console.error('Sync failed:', error);
+    }
+  }
+
+  async function handleRemoveDevice() {
+    if (!confirm('Remove this device? It will need to be re-activated with a new PIN.')) return;
+
+    try {
+      await apiFetch(`/devices/${deviceId}`, {
+        method: 'DELETE'
+      });
+
+      // Clear local state
+      localStorage.removeItem('deviceId');
+      setDeviceId(null);
+      setViewState('not-connected');
+
+      // Register new device with new PIN
+      registerDevice();
+    } catch (error) {
+      console.error('Remove failed:', error);
     }
   }
 
@@ -262,7 +301,7 @@ export function Player() {
                   <p className="text-sm text-gray-600">LK,USA</p>
                 </div>
               </div>
-              <Button variant="destructive" size="sm" className="bg-red-500 hover:bg-red-600">
+              <Button variant="destructive" size="sm" className="bg-red-500 hover:bg-red-600" onClick={handleRemoveDevice}>
                 Remove
               </Button>
             </div>

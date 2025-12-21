@@ -301,7 +301,11 @@ app.post(`${BASE_PATH}/player/register`, async (c) => {
     await kv.set(`device:${deviceId}`, newDevice);
     console.log('Device created with PIN:', pin, 'ID:', deviceId);
 
-    return c.json({ pin, activated: false });
+    return c.json({
+      deviceId,
+      pin,
+      activated: false
+    });
   } catch (e) {
     console.error('Registration error:', e);
     return c.json({ error: e.message }, 500);
@@ -311,16 +315,19 @@ app.post(`${BASE_PATH}/player/register`, async (c) => {
 // CHECK ACTIVATION STATUS - Player polls this
 app.get(`${BASE_PATH}/player/status`, async (c) => {
   try {
-    const pin = c.req.query('pin');
-    if (!pin) {
-      return c.json({ error: 'PIN required' }, 400);
+    const deviceId = c.req.query('deviceId');
+    if (!deviceId) {
+      return c.json({ error: 'deviceId required' }, 400);
     }
 
-    const allDevices = await kv.getByPrefix("device:");
-    const device = allDevices.find(d => d.pin === pin);
+    const device = await kv.get(`device:${deviceId}`);
 
     if (!device) {
-      return c.json({ error: 'Device not found' }, 404);
+      // Device was deleted
+      return c.json({
+        activated: false,
+        deleted: true
+      });
     }
 
     // Update last seen
@@ -435,6 +442,27 @@ app.post(`${BASE_PATH}/devices/activate`, async (c) => {
     return c.json({ success: true, device });
   } catch (error) {
     console.error('Activation error:', error);
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// DELETE DEVICE - Remove/deactivate device
+app.delete(`${BASE_PATH}/devices/:id`, async (c) => {
+  try {
+    const id = c.req.param('id');
+
+    const device = await kv.get(`device:${id}`);
+    if (!device) {
+      return c.json({ error: 'Device not found' }, 404);
+    }
+
+    // Delete the device
+    await kv.delete(`device:${id}`);
+    console.log('Device deleted:', id);
+
+    return c.json({ success: true });
+  } catch (error) {
+    console.error('Delete error:', error);
     return c.json({ error: error.message }, 500);
   }
 });
