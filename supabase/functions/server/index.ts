@@ -266,38 +266,21 @@ app.post(`${BASE_PATH}/devices/register`, async (c) => {
     // Get all devices
     const allDevices = await kv.getByPrefix("device:");
 
-    // Check by UUID first (most reliable identifier)
+    // Check by UUID ONLY - this is the permanent device identifier
     let existingDevice = null;
     if (deviceUUID) {
       existingDevice = allDevices.find(d => d.deviceUUID === deviceUUID);
       if (existingDevice) {
-        console.log('Device found by UUID:', deviceUUID);
+        console.log('✅ Device found by UUID:', deviceUUID, 'Status:', existingDevice.status);
+        // Update last seen and IP (IP may change, but UUID stays same)
+        existingDevice.lastSeen = new Date().toISOString();
+        existingDevice.ipAddress = clientIP;
+        await kv.set(`device:${existingDevice.id}`, existingDevice);
+        return c.json(existingDevice);
       }
     }
 
-    // Fallback to IP if UUID doesn't match (backward compatibility)
-    if (!existingDevice && clientIP && clientIP !== 'unknown') {
-      existingDevice = allDevices.find(d => d.ipAddress === clientIP);
-      if (existingDevice) {
-        console.log('Device found by IP:', clientIP);
-        // Update UUID if device was registered before UUID implementation
-        if (!existingDevice.deviceUUID && deviceUUID) {
-          existingDevice.deviceUUID = deviceUUID;
-          console.log('Updated device with UUID:', deviceUUID);
-        }
-      }
-    }
-
-    // Existing device found - update and return
-    if (existingDevice) {
-      existingDevice.lastSeen = new Date().toISOString();
-      existingDevice.ipAddress = clientIP; // Update IP in case it changed
-      await kv.set(`device:${existingDevice.id}`, existingDevice);
-      console.log('Returning existing device:', existingDevice.id, 'Status:', existingDevice.status);
-      return c.json(existingDevice);
-    }
-
-    // New device - create with pending status
+    // No existing device found - create NEW device with PENDING status
     console.log('Creating new device for UUID:', deviceUUID, 'IP:', clientIP);
     const deviceId = crypto.randomUUID();
     const pin = Math.floor(100000 + Math.random() * 900000).toString();
