@@ -136,16 +136,29 @@ export function Devices() {
               </DialogHeader>
               <form onSubmit={handleAddDevice} className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="pin">6-Digit PIN</Label>
+                  <Label htmlFor="pin">Device PIN</Label>
                   <Input
                     id="pin"
                     value={pin}
-                    onChange={(e) => setPin(e.target.value)}
-                    placeholder="123456"
-                    maxLength={6}
+                    onChange={(e) => {
+                      // Format as XXXX-XXXX (uppercase, alphanumeric)
+                      let value = e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, '');
+                      // Auto-insert dash after 4 characters
+                      if (value.length > 4 && value[4] !== '-') {
+                        value = value.slice(0, 4) + '-' + value.slice(4);
+                      }
+                      // Limit to 9 characters (XXXX-XXXX)
+                      value = value.slice(0, 9);
+                      setPin(value);
+                    }}
+                    placeholder="BB8A-SDE7"
+                    maxLength={9}
                     required
-                    className="text-center text-2xl tracking-widest"
+                    className="text-center text-2xl tracking-widest font-mono"
                   />
+                  <p className="text-xs text-muted-foreground text-center">
+                    Enter the 8-character PIN shown on the device screen
+                  </p>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="name">Device Name</Label>

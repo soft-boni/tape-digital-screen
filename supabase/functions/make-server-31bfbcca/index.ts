@@ -23,13 +23,18 @@ const BASE_PATH = "/make-server-31bfbcca";
 
 // Public endpoints that don't require authentication
 const PUBLIC_ENDPOINTS = [
-  `${BASE_PATH}/devices/register`,  // Player registration
-  `${BASE_PATH}/devices/:id/status` // Player status polling
+  `${BASE_PATH}/player/register`,  // Player registration
+  `${BASE_PATH}/player/status`,     // Player status polling
+  `${BASE_PATH}/devices/:id/status` // Device status polling (legacy)
 ];
 
 // Skip auth check for public endpoints
 app.use("*", async (c, next) => {
   const path = c.req.path;
+
+  // Log all incoming paths for debugging
+  console.log('Incoming request path:', path);
+  console.log('Full URL:', c.req.url);
 
   // Check if this is a public endpoint
   const isPublic = PUBLIC_ENDPOINTS.some(pattern => {
@@ -129,6 +134,11 @@ app.post(`${BASE_PATH}/content`, async (c) => {
 app.post(`${BASE_PATH}/storage/sign`, async (c) => {
   try {
     const { fileName, fileType } = await c.req.json();
+
+    if (!fileName || !fileType) {
+      return c.json({ error: 'fileName and fileType are required' }, 400);
+    }
+
     const bucketName = "make-31bfbcca-content";
     await ensureBucket(bucketName);
 
@@ -138,13 +148,25 @@ app.post(`${BASE_PATH}/storage/sign`, async (c) => {
       .from(bucketName)
       .createSignedUploadUrl(path);
 
-    if (error) throw error;
+    if (error) {
+      console.error('Storage sign error:', error);
+      throw error;
+    }
+
+    if (!data || !data.signedUrl) {
+      console.error('Storage sign returned null data:', { data, error });
+      throw new Error('Failed to generate signed upload URL. Storage service returned null.');
+    }
 
     // Return upload URL and path. Read URL will be generated after upload.
-    return c.json({ uploadUrl: data.signedUrl, path, token: data.token });
-  } catch (e) {
-    console.error(e);
-    return c.json({ error: e.message }, 500);
+    return c.json({
+      uploadUrl: data.signedUrl,
+      path,
+      token: data.token || null
+    });
+  } catch (e: any) {
+    console.error('Storage sign endpoint error:', e);
+    return c.json({ error: e.message || 'Failed to generate signed upload URL' }, 500);
   }
 });
 
@@ -256,10 +278,13 @@ app.delete(`${BASE_PATH}/screens/:id`, async (c) => {
 // SIMPLE PIN GENERATION - Device calls this
 app.post(`${BASE_PATH}/player/register`, async (c) => {
   try {
+    console.log('=== Device Registration ===');
+    console.log('Request path:', c.req.path);
+    console.log('Request URL:', c.req.url);
+
     const body = await c.req.json().catch(() => ({}));
     const { ipAddress } = body;
 
-    console.log('=== Device Registration ===');
     console.log('IP:', ipAddress);
 
     // Generate unique PIN in BB8A-SDE7 format (alphanumeric)
@@ -338,8 +363,30 @@ app.get(`${BASE_PATH}/player/status`, async (c) => {
     let content = [];
     if (device.activated && device.screenId) {
       const screen = await kv.get(`screen:${device.screenId}`);
-      if (screen) {
-        content = screen.content || [];
+      if (screen && screen.content) {
+        // Expand contentId references to full content objects
+        const expandedContent = [];
+        for (const item of screen.content) {
+          if (item.contentId) {
+            // Lookup the actual content by ID
+            const contentData = await kv.get(`content:${item.contentId}`);
+            if (contentData) {
+              // Merge content details with playlist item
+              expandedContent.push({
+                ...item,
+                type: contentData.type,
+                url: contentData.url,
+                name: contentData.name || contentData.fileName || 'Untitled'
+              });
+            } else {
+              console.warn(`Content not found: ${item.contentId}`);
+            }
+          } else {
+            // Item already has full data (legacy format)
+            expandedContent.push(item);
+          }
+        }
+        content = expandedContent;
       }
     }
 
@@ -415,14 +462,16 @@ app.post(`${BASE_PATH}/devices/activate`, async (c) => {
     device.activated = true;
     device.activatedAt = new Date().toISOString();
 
-    // Store account name from authenticated user
+    // Store account name and userId from authenticated user
     const authHeader = c.req.header('Authorization');
     if (authHeader) {
       try {
         const token = authHeader.replace('Bearer ', '');
-        const { data: { user } } = await supabase.auth.getUser(token);
+        const supabaseClient = getSupabase();
+        const { data: { user } } = await supabaseClient.auth.getUser(token);
         if (user) {
           device.accountName = user.email?.split('@')[0] || 'User';
+          device.userId = user.id; // Store userId for notification tracking
         }
       } catch (e) {
         console.log('Could not get user info:', e);
@@ -457,7 +506,7 @@ app.delete(`${BASE_PATH}/devices/:id`, async (c) => {
     }
 
     // Delete the device
-    await kv.delete(`device:${id}`);
+    await kv.del(`device:${id}`);
     console.log('Device deleted:', id);
 
     return c.json({ success: true });
@@ -467,16 +516,7 @@ app.delete(`${BASE_PATH}/devices/:id`, async (c) => {
   }
 });
 
-// List Devices (Admin)
-app.get(`${BASE_PATH}/devices`, async (c) => {
-  try {
-    const devices = await kv.getByPrefix("device:");
-    return c.json(devices);
-  } catch (e) {
-    console.error(e);
-    return c.json({ error: e.message }, 500);
-  }
-});
+// List Devices (Admin) - with notification tracking
 
 // Claim Device (Admin)
 app.post(`${BASE_PATH}/devices/claim`, async (c) => {
@@ -550,6 +590,275 @@ app.get(`${BASE_PATH}/dashboard/stats`, async (c) => {
     console.error(e);
     return c.json({ error: e.message }, 500);
   }
+});
+
+// --- Profile Routes ---
+
+// Get User Profile
+app.get(`${BASE_PATH}/profile`, async (c) => {
+  try {
+    const authHeader = c.req.header('Authorization');
+    if (!authHeader) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+
+    const token = authHeader.replace('Bearer ', '');
+    const supabase = getSupabase();
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+
+    if (error || !user) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+
+    const profileKey = `profile:${user.id}`;
+    const profile = await kv.get(profileKey);
+
+    if (!profile) {
+      return c.json({
+        name: user.email?.split('@')[0] || 'User',
+        email: user.email || '',
+        avatarUrl: null
+      });
+    }
+
+    return c.json(profile);
+  } catch (e) {
+    console.error(e);
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// Update User Profile
+app.put(`${BASE_PATH}/profile`, async (c) => {
+  try {
+    const authHeader = c.req.header('Authorization');
+    if (!authHeader) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+
+    const token = authHeader.replace('Bearer ', '');
+    const supabase = getSupabase();
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+
+    if (error || !user) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+
+    const body = await c.req.json();
+    const profileKey = `profile:${user.id}`;
+
+    const existingProfile = await kv.get(profileKey) || {};
+    const updatedProfile = {
+      ...existingProfile,
+      name: body.name || existingProfile.name || user.email?.split('@')[0] || 'User',
+      email: user.email || '',
+      avatarUrl: body.avatarUrl !== undefined ? body.avatarUrl : existingProfile.avatarUrl,
+      updatedAt: new Date().toISOString()
+    };
+
+    await kv.set(profileKey, updatedProfile);
+    return c.json(updatedProfile);
+  } catch (e) {
+    console.error(e);
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// --- Notification Routes ---
+
+// Helper function to create notification
+async function createNotification(userId: string, type: string, message: string, deviceName: string) {
+  const notificationId = crypto.randomUUID();
+  const notification = {
+    id: notificationId,
+    userId,
+    type,
+    message,
+    deviceName,
+    timestamp: new Date().toISOString(),
+    read: false
+  };
+
+  await kv.set(`notification:${notificationId}`, notification);
+
+  // Add to user's notification list
+  const userNotificationsKey = `user_notifications:${userId}`;
+  const userNotifications = await kv.get(userNotificationsKey) || { notificationIds: [] };
+  userNotifications.notificationIds = [...(userNotifications.notificationIds || []), notificationId];
+  await kv.set(userNotificationsKey, userNotifications);
+
+  return notification;
+}
+
+// Get Notifications for User
+app.get(`${BASE_PATH}/notifications`, async (c) => {
+  try {
+    const authHeader = c.req.header('Authorization');
+    if (!authHeader) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+
+    const token = authHeader.replace('Bearer ', '');
+    const supabase = getSupabase();
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+
+    if (error || !user) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+
+    const userNotificationsKey = `user_notifications:${user.id}`;
+    const userNotifications = await kv.get(userNotificationsKey) || { notificationIds: [] };
+
+    const notificationIds = userNotifications.notificationIds || [];
+    const notifications = [];
+
+    for (const id of notificationIds.slice(-50)) { // Get last 50 notifications
+      const notification = await kv.get(`notification:${id}`);
+      if (notification) {
+        notifications.push(notification);
+      }
+    }
+
+    // Sort by timestamp, newest first
+    notifications.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    const unreadCount = notifications.filter(n => !n.read).length;
+
+    return c.json({
+      notifications,
+      unreadCount
+    });
+  } catch (e) {
+    console.error(e);
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// Mark Notification as Read
+app.post(`${BASE_PATH}/notifications/:id/read`, async (c) => {
+  try {
+    const authHeader = c.req.header('Authorization');
+    if (!authHeader) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+
+    const token = authHeader.replace('Bearer ', '');
+    const supabase = getSupabase();
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+
+    if (error || !user) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+
+    const notificationId = c.req.param('id');
+    const notification = await kv.get(`notification:${notificationId}`);
+
+    if (!notification || notification.userId !== user.id) {
+      return c.json({ error: 'Notification not found' }, 404);
+    }
+
+    notification.read = true;
+    await kv.set(`notification:${notificationId}`, notification);
+
+    return c.json({ success: true });
+  } catch (e) {
+    console.error(e);
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// Track device status changes and create notifications
+// This should be called when device status changes
+async function trackDeviceStatus(device: any, previousStatus: string | null, userId: string) {
+  const now = new Date().getTime();
+  const lastSeen = new Date(device.lastSeen).getTime();
+  const isOnline = (now - lastSeen) < 120000; // 2 minutes threshold
+
+  if (previousStatus === null) {
+    // New device, no notification needed
+    return;
+  }
+
+  const wasOnline = previousStatus === 'online';
+
+  if (wasOnline && !isOnline) {
+    // Device went offline
+    await createNotification(
+      userId,
+      'device_offline',
+      `${device.name} went offline`,
+      device.name
+    );
+  } else if (!wasOnline && isOnline) {
+    // Device came online
+    await createNotification(
+      userId,
+      'device_online',
+      `${device.name} came online`,
+      device.name
+    );
+  }
+}
+
+// Update device status check to track notifications
+// Modify the devices list endpoint to track status changes
+app.get(`${BASE_PATH}/devices`, async (c) => {
+  try {
+    const authHeader = c.req.header('Authorization');
+    const token = authHeader?.replace('Bearer ', '');
+
+    let userId = null;
+    if (token) {
+      try {
+        const supabase = getSupabase();
+        const { data: { user } } = await supabase.auth.getUser(token);
+        userId = user?.id;
+      } catch (e) {
+        console.log('Could not get user:', e);
+      }
+    }
+
+    const devices = await kv.getByPrefix("device:");
+
+    // Track status changes for each device
+    if (userId) {
+      for (const device of devices) {
+        // Only track devices that belong to this user
+        if (device.activated && device.userId === userId) {
+          const deviceStatusKey = `device_status:${device.id}`;
+          const previousStatus = await kv.get(deviceStatusKey);
+
+          const now = new Date().getTime();
+          const lastSeen = new Date(device.lastSeen).getTime();
+          const isOnline = (now - lastSeen) < 120000; // 2 minutes
+          const currentStatus = isOnline ? 'online' : 'offline';
+
+          if (previousStatus !== currentStatus) {
+            await trackDeviceStatus(device, previousStatus, userId);
+            await kv.set(deviceStatusKey, currentStatus);
+          }
+        }
+      }
+    }
+
+    return c.json(devices);
+  } catch (e) {
+    console.error(e);
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// Add catch-all route for debugging 404s
+app.all("*", async (c) => {
+  console.log('404 - Path not found:', c.req.path);
+  console.log('404 - Method:', c.req.method);
+  console.log('404 - Full URL:', c.req.url);
+  return c.json({
+    error: 'Not Found',
+    path: c.req.path,
+    method: c.req.method,
+    message: 'The requested endpoint does not exist. Check the path and method.'
+  }, 404);
 });
 
 Deno.serve(app.fetch);

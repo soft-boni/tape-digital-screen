@@ -11,6 +11,8 @@ import { ScreenEditor } from "./pages/ScreenEditor";
 import { Devices } from "./pages/Devices";
 import { Content } from "./pages/Content";
 import { Player } from "./pages/Player";
+import { EditProfile } from "./pages/EditProfile";
+import { Settings } from "./pages/Settings";
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -68,6 +70,8 @@ export default function App() {
             <Route path="/screens/:id" element={<ScreenEditor />} />
             <Route path="/devices" element={<Devices />} />
             <Route path="/content" element={<Content />} />
+            <Route path="/profile/edit" element={<EditProfile />} />
+            <Route path="/settings" element={<Settings />} />
           </Route>
         </Route>
       </Routes>
