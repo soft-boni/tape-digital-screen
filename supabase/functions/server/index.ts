@@ -387,7 +387,7 @@ app.post(`${BASE_PATH}/devices/activate`, async (c) => {
     console.log('PIN:', pin);
 
     // Find device by PIN
-    const all Devices = await kv.getByPrefix("device:");
+    const allDevices = await kv.getByPrefix("device:");
     const device = allDevices.find(d => d.pin === pin);
 
     if (!device) {
