@@ -252,62 +252,93 @@ app.delete(`${BASE_PATH}/screens/:id`, async (c) => {
 
 // --- Device Routes ---
 
-// Register Device (Player calls this) - IP-BASED
-app.post(`${BASE_PATH}/devices/register`, async (c) => {
+// SIMPLE PIN GENERATION - Device calls this
+app.post(`${BASE_PATH}/player/register`, async (c) => {
   try {
-    // Get both UUID and IP from request
     const body = await c.req.json().catch(() => ({}));
-    const { deviceUUID, clientIP } = body;
+    const { ipAddress } = body;
 
     console.log('=== Device Registration ===');
-    console.log('Device UUID:', deviceUUID);
-    console.log('Client IP:', clientIP);
+    console.log('IP:', ipAddress);
 
-    // Get all devices
+    // Generate unique 6-digit PIN
+    let pin = '';
+    let attempts = 0;
     const allDevices = await kv.getByPrefix("device:");
 
-    // Check by UUID ONLY - this is the permanent device identifier
-    let existingDevice = null;
-    if (deviceUUID) {
-      existingDevice = allDevices.find(d => d.deviceUUID === deviceUUID);
-      if (existingDevice) {
-        console.log('✅ Device found by UUID:', deviceUUID, 'Status:', existingDevice.status);
-        // Update last seen and IP (IP may change, but UUID stays same)
-        existingDevice.lastSeen = new Date().toISOString();
-        existingDevice.ipAddress = clientIP;
-        await kv.set(`device:${existingDevice.id}`, existingDevice);
-        return c.json(existingDevice);
-      }
+    while (attempts < 10) {
+      pin = Math.floor(100000 + Math.random() * 900000).toString();
+      const pinExists = allDevices.some(d => d.pin === pin);
+      if (!pinExists) break;
+      attempts++;
     }
 
-    // No existing device found - create NEW device with PENDING status
-    console.log('Creating new device for UUID:', deviceUUID, 'IP:', clientIP);
+    if (!pin) {
+      return c.json({ error: 'Failed to generate unique PIN' }, 500);
+    }
+
+    // Create device with activated=false
     const deviceId = crypto.randomUUID();
-    const pin = Math.floor(100000 + Math.random() * 900000).toString();
-    const userAgent = c.req.header('user-agent') || 'Unknown Device';
+    const userAgent = c.req.header('user-agent') || 'Unknown';
     const deviceName = extractDeviceName(userAgent);
 
     const newDevice = {
       id: deviceId,
-      deviceUUID,       // Permanent identifier
-      ipAddress: clientIP,
-      pin,              // One-time PIN
+      pin,
       name: deviceName,
-      userAgent,
-      status: "pending", // Requires PIN activation
+      activated: false,  // ⭐ Simple boolean
+      ipAddress,
       screenId: null,
-      claimedBy: null,
-      claimedAt: null,
-      lastSeen: new Date().toISOString(),
-      registeredAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      activatedAt: null,
+      lastSeen: new Date().toISOString()
     };
 
     await kv.set(`device:${deviceId}`, newDevice);
-    console.log('Device created:', deviceId, 'PIN:', pin, 'UUID:', deviceUUID);
+    console.log('Device created with PIN:', pin, 'ID:', deviceId);
 
-    return c.json(newDevice);
+    return c.json({ pin, activated: false });
   } catch (e) {
-    console.error('Device registration error:', e);
+    console.error('Registration error:', e);
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// CHECK ACTIVATION STATUS - Player polls this
+app.get(`${BASE_PATH}/player/status`, async (c) => {
+  try {
+    const pin = c.req.query('pin');
+    if (!pin) {
+      return c.json({ error: 'PIN required' }, 400);
+    }
+
+    const allDevices = await kv.getByPrefix("device:");
+    const device = allDevices.find(d => d.pin === pin);
+
+    if (!device) {
+      return c.json({ error: 'Device not found' }, 404);
+    }
+
+    // Update last seen
+    device.lastSeen = new Date().toISOString();
+    await kv.set(`device:${device.id}`, device);
+
+    // Return activation status and content if activated
+    let content = [];
+    if (device.activated && device.screenId) {
+      const screen = await kv.get(`screen:${device.screenId}`);
+      if (screen) {
+        content = screen.content || [];
+      }
+    }
+
+    return c.json({
+      activated: device.activated,
+      screenId: device.screenId,
+      content
+    });
+  } catch (e) {
+    console.error(e);
     return c.json({ error: e.message }, 500);
   }
 });
@@ -342,8 +373,8 @@ app.get(`${BASE_PATH}/devices/:id/status`, async (c) => {
   }
 });
 
-// Verify PIN and activate device (Admin uses this)
-app.post(`${BASE_PATH}/devices/verify-pin`, async (c) => {
+// ACTIVATE DEVICE - Admin calls this
+app.post(`${BASE_PATH}/devices/activate`, async (c) => {
   try {
     const body = await c.req.json();
     const { pin, name } = body;
@@ -352,32 +383,34 @@ app.post(`${BASE_PATH}/devices/verify-pin`, async (c) => {
       return c.json({ error: 'PIN is required' }, 400);
     }
 
-    console.log('=== PIN Verification ===');
-    console.log('PIN provided:', pin);
+    console.log('=== Device Activation ===');
+    console.log('PIN:', pin);
 
     // Find device by PIN
-    const allDevices = await kv.getByPrefix("device:");
-    const device = allDevices.find(d => d.pin === pin && d.status === 'pending');
+    const all Devices = await kv.getByPrefix("device:");
+    const device = allDevices.find(d => d.pin === pin);
 
     if (!device) {
-      console.log('No pending device found with PIN:', pin);
-      return c.json({ error: 'Invalid PIN or device already activated' }, 404);
+      return c.json({ error: 'Invalid PIN' }, 404);
     }
 
-    // Activate device and CLEAR PIN (one-time use)
-    device.status = 'active';
-    device.pin = null; // ✅ ONE-TIME USE - Clear PIN after activation
+    if (device.activated) {
+      return c.json({ error: 'Device already activated' }, 400);
+    }
+
+    // Activate device
+    device.activated = true;
+    device.activatedAt = new Date().toISOString();
     if (name && name.trim()) {
       device.name = name.trim();
     }
-    device.activatedAt = new Date().toISOString();
 
     await kv.set(`device:${device.id}`, device);
-    console.log('Device activated:', device.id, 'Name:', device.name, 'PIN cleared');
+    console.log('Device activated:', device.id, device.name);
 
-    return c.json(device);
+    return c.json({ success: true, device });
   } catch (error) {
-    console.error('Error in /devices/verify-pin:', error);
+    console.error('Activation error:', error);
     return c.json({ error: error.message }, 500);
   }
 });

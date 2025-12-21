@@ -74,7 +74,7 @@ export function Devices() {
     e.preventDefault();
     setAdding(true);
     try {
-      await apiFetch("/devices/verify-pin", {
+      await apiFetch("/devices/activate", {
         method: "POST",
         body: JSON.stringify({ pin, name: deviceName }),
       });
