@@ -319,8 +319,14 @@ app.get(`${BASE_PATH}/devices/:id/status`, async (c) => {
     const device = await kv.get(`device:${id}`);
     if (!device) return c.json({ error: "Not found" }, 404);
 
-    // Update last seen
-    const updated = { ...device, lastSeen: new Date().toISOString(), status: "online" };
+    // Update last seen WITHOUT changing status
+    // CRITICAL: Do NOT overwrite 'pending' status to 'online'!
+    // Only mark as 'online' if already active
+    const updated = {
+      ...device,
+      lastSeen: new Date().toISOString()
+      // Do NOT set status here - preserve whatever it was (pending/active)
+    };
     await kv.set(`device:${id}`, updated);
 
     // If assigned to a screen, fetch screen details
