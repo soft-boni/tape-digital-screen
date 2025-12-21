@@ -335,7 +335,9 @@ app.get(`${BASE_PATH}/player/status`, async (c) => {
     return c.json({
       activated: device.activated,
       screenId: device.screenId,
-      content
+      content,
+      accountName: device.accountName || 'User',
+      deviceName: device.name || 'Display Device'
     });
   } catch (e) {
     console.error(e);
@@ -401,12 +403,30 @@ app.post(`${BASE_PATH}/devices/activate`, async (c) => {
     // Activate device
     device.activated = true;
     device.activatedAt = new Date().toISOString();
+
+    // Store account name from authenticated user
+    const authHeader = c.req.header('Authorization');
+    if (authHeader) {
+      try {
+        const token = authHeader.replace('Bearer ', '');
+        const { data: { user } } = await supabase.auth.getUser(token);
+        if (user) {
+          device.accountName = user.email?.split('@')[0] || 'User';
+        }
+      } catch (e) {
+        console.log('Could not get user info:', e);
+        device.accountName = 'User';
+      }
+    } else {
+      device.accountName = 'User';
+    }
+
     if (name && name.trim()) {
       device.name = name.trim();
     }
 
     await kv.set(`device:${device.id}`, device);
-    console.log('Device activated:', device.id, device.name);
+    console.log('Device activated:', device.id, device.name, 'Account:', device.accountName);
 
     return c.json({ success: true, device });
   } catch (error) {
