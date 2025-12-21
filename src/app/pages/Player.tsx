@@ -604,6 +604,9 @@ export function Player() {
     console.log('📊 Content length:', content.length);
     console.log('👉 Current index:', currentIndex);
 
+    // Log full JSON structure
+    console.log('🔍 FULL CONTENT JSON:', JSON.stringify(content, null, 2));
+
     if (content.length === 0) {
       console.error('❌ No content to play!');
       return (
@@ -625,6 +628,10 @@ export function Player() {
 
     const currentItem = content[currentIndex];
     console.log('▶️ Playing content item:', currentIndex, currentItem);
+    console.log('🔍 Current item JSON:', JSON.stringify(currentItem, null, 2));
+    console.log('📌 Has type?', currentItem?.type);
+    console.log('📌 Has url?', currentItem?.url);
+    console.log('📌 Has contentId?', currentItem?.contentId);
 
     if (!currentItem) {
       console.error('❌ Current item is undefined!');

@@ -375,7 +375,7 @@ app.get(`${BASE_PATH}/player/status`, async (c) => {
               expandedContent.push({
                 ...item,
                 type: contentData.type,
-                url: contentData.url,
+                url: contentData.readUrl || contentData.url, // Frontend saves as 'readUrl'
                 name: contentData.name || contentData.fileName || 'Untitled'
               });
             } else {
