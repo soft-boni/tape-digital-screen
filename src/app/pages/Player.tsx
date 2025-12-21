@@ -206,10 +206,10 @@ export function Player() {
         <div className="mt-8 text-center space-y-3 bg-slate-800/50 px-8 py-6 rounded-xl border border-slate-700/50">
           <p className="text-slate-400 text-sm uppercase tracking-wide font-semibold">Device Information</p>
           <div className="space-y-2 text-slate-300">
-            <p className="flex items-center justify-center gap-2">
-              <span className="text-slate-500">IP Address:</span>
-              <span className="font-mono font-medium">{(device as any).ipAddress || 'Detecting...'}</span>
-            </p>
+            <div className="flex items-center gap-3">
+              <Globe className="w-4 h-4 text-slate-400" />
+              <p className="text-slate-400">IP: <span className="font-mono">{device.ipAddress || 'Unknown'}</span></p>
+            </div>
             <p className="flex items-center justify-center gap-2">
               <span className="text-slate-500">Device:</span>
               <span className="font-medium">{device.name}</span>
