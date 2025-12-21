@@ -261,7 +261,7 @@ app.post(`${BASE_PATH}/player/register`, async (c) => {
     console.log('=== Device Registration ===');
     console.log('IP:', ipAddress);
 
-    // Generate unique 6-digit PIN
+    // Generate unique PIN in BB8A-SDE7 format (alphanumeric)
     let pin = '';
     let attempts = 0;
     const allDevices = await kv.getByPrefix("device:");
