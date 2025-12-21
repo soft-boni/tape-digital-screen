@@ -1,7 +1,8 @@
 
+
 import { useEffect, useState, useRef } from "react";
 import { apiFetch } from "../utils/api";
-import { Loader2, Monitor } from "lucide-react";
+import { Loader2, Monitor, Globe } from "lucide-react";
 
 interface DeviceState {
   id: string;
