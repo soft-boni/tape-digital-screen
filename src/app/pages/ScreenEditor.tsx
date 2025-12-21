@@ -9,7 +9,7 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { Play, Pause, SkipBack, SkipForward, Plus, Trash2, GripVertical, Save, Monitor, X } from "lucide-react";
-import { Card, CardContent } from "../components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog";
 import { toast } from "sonner";
 
@@ -481,6 +481,26 @@ export function ScreenEditor() {
                         </Button>
                       </div>
                     </div>
+                  </CardContent>
+                </Card>
+
+                {/* Delete Screen - Danger Zone */}
+                <Card className="border-destructive mt-6">
+                  <CardHeader>
+                    <CardTitle className="text-destructive">Danger Zone</CardTitle>
+                    <p className="text-sm text-muted-foreground">
+                      Permanently delete this screen and all its settings
+                    </p>
+                  </CardHeader>
+                  <CardContent>
+                    <Button
+                      variant="destructive"
+                      onClick={handleDeleteScreen}
+                      className="w-full sm:w-auto"
+                    >
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Delete Screen
+                    </Button>
                   </CardContent>
                 </Card>
               </TabsContent>
