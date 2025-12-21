@@ -46,6 +46,16 @@ export function Player() {
 
   const initDevice = async () => {
     try {
+      // Generate or retrieve device UUID (permanent identity)
+      let deviceUUID = localStorage.getItem('device_uuid');
+      if (!deviceUUID) {
+        deviceUUID = crypto.randomUUID();
+        localStorage.setItem('device_uuid', deviceUUID);
+        console.log('New device UUID generated:', deviceUUID);
+      } else {
+        console.log('Existing device UUID found:', deviceUUID);
+      }
+
       // Fetch client IP from frontend (more reliable than backend headers)
       let clientIP = 'unknown';
       try {
@@ -57,16 +67,14 @@ export function Player() {
         console.warn('Could not detect IP, using unknown');
       }
 
-      // Always call register - backend handles IP checking
-      // If IP exists, returns existing device
-      // If new IP, creates room with PIN
+      // Send both UUID (primary) and IP (fallback) to backend
       const device = await apiFetch("/devices/register", {
         method: "POST",
-        body: JSON.stringify({ clientIP }) // Send IP explicitly
+        body: JSON.stringify({ deviceUUID, clientIP })
       });
       setDevice(device);
 
-      console.log('Device initialized:', device.status, 'IP:', device.ipAddress);
+      console.log('Device initialized:', device.status, 'UUID:', deviceUUID, 'IP:', device.ipAddress);
 
       // Start polling for updates
       startPolling(device.id);

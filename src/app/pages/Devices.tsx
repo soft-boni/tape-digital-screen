@@ -74,17 +74,17 @@ export function Devices() {
     e.preventDefault();
     setAdding(true);
     try {
-      await apiFetch("/devices/claim", {
+      await apiFetch("/devices/verify-pin", {
         method: "POST",
         body: JSON.stringify({ pin, name: deviceName }),
       });
-      toast.success("Device added successfully!");
+      toast.success("Device activated successfully!");
       setIsAddModalOpen(false);
       setPin("");
       setDeviceName("");
       loadData();
     } catch (error: any) {
-      toast.error(error.message || "Failed to add device");
+      toast.error(error.message || "Failed to activate device");
     } finally {
       setAdding(false);
     }

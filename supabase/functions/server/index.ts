@@ -255,52 +255,63 @@ app.delete(`${BASE_PATH}/screens/:id`, async (c) => {
 // Register Device (Player calls this) - IP-BASED
 app.post(`${BASE_PATH}/devices/register`, async (c) => {
   try {
-    // Get IP from request body (sent by frontend) or headers as fallback
+    // Get both UUID and IP from request
     const body = await c.req.json().catch(() => ({}));
-    const clientIP = body.clientIP;
-
-    // Fallback to headers if not in body
-    const forwardedFor = c.req.header('x-forwarded-for');
-    const realIp = c.req.header('x-real-ip');
-    const cfConnectingIp = c.req.header('cf-connecting-ip');
-
-    // Use clientIP from frontend, or extract from headers
-    let ipAddress = clientIP || forwardedFor || realIp || cfConnectingIp || 'unknown';
-    if (ipAddress && ipAddress.includes(',')) {
-      ipAddress = ipAddress.split(',')[0].trim();
-    }
+    const { deviceUUID, clientIP } = body;
 
     console.log('=== Device Registration ===');
-    console.log('IP captured:', ipAddress);
-    console.log('Headers:', { forwardedFor, realIp, cfConnectingIp });
+    console.log('Device UUID:', deviceUUID);
+    console.log('Client IP:', clientIP);
 
-    // Check if this IP already has a device (room)
+    // Get all devices
     const allDevices = await kv.getByPrefix("device:");
-    const existingDevice = allDevices.find(d => d.ipAddress === ipAddress);
 
+    // Check by UUID first (most reliable identifier)
+    let existingDevice = null;
+    if (deviceUUID) {
+      existingDevice = allDevices.find(d => d.deviceUUID === deviceUUID);
+      if (existingDevice) {
+        console.log('Device found by UUID:', deviceUUID);
+      }
+    }
+
+    // Fallback to IP if UUID doesn't match (backward compatibility)
+    if (!existingDevice && clientIP && clientIP !== 'unknown') {
+      existingDevice = allDevices.find(d => d.ipAddress === clientIP);
+      if (existingDevice) {
+        console.log('Device found by IP:', clientIP);
+        // Update UUID if device was registered before UUID implementation
+        if (!existingDevice.deviceUUID && deviceUUID) {
+          existingDevice.deviceUUID = deviceUUID;
+          console.log('Updated device with UUID:', deviceUUID);
+        }
+      }
+    }
+
+    // Existing device found - update and return
     if (existingDevice) {
-      console.log('Existing device found for IP:', ipAddress, 'Status:', existingDevice.status);
-      // Update last seen and return existing device
       existingDevice.lastSeen = new Date().toISOString();
+      existingDevice.ipAddress = clientIP; // Update IP in case it changed
       await kv.set(`device:${existingDevice.id}`, existingDevice);
+      console.log('Returning existing device:', existingDevice.id, 'Status:', existingDevice.status);
       return c.json(existingDevice);
     }
 
-    // New IP - create room
-    console.log('New IP detected, creating room for:', ipAddress);
-
-    const pin = generatePinFromIP(ipAddress);
-    const id = crypto.randomUUID();
+    // New device - create with pending status
+    console.log('Creating new device for UUID:', deviceUUID, 'IP:', clientIP);
+    const deviceId = crypto.randomUUID();
+    const pin = Math.floor(100000 + Math.random() * 900000).toString();
     const userAgent = c.req.header('user-agent') || 'Unknown Device';
     const deviceName = extractDeviceName(userAgent);
 
     const newDevice = {
-      id,
-      ipAddress,
-      pin,
+      id: deviceId,
+      deviceUUID,       // Permanent identifier
+      ipAddress: clientIP,
+      pin,              // One-time PIN
       name: deviceName,
       userAgent,
-      status: "pending", // pending = unlocked room
+      status: "pending", // Requires PIN activation
       screenId: null,
       claimedBy: null,
       claimedAt: null,
@@ -308,8 +319,9 @@ app.post(`${BASE_PATH}/devices/register`, async (c) => {
       registeredAt: new Date().toISOString()
     };
 
-    await kv.set(`device:${id}`, newDevice);
-    console.log('Room created with PIN:', pin, 'for IP:', ipAddress);
+    await kv.set(`device:${deviceId}`, newDevice);
+    console.log('Device created:', deviceId, 'PIN:', pin, 'UUID:', deviceUUID);
+
     return c.json(newDevice);
   } catch (e) {
     console.error('Device registration error:', e);
@@ -338,6 +350,46 @@ app.get(`${BASE_PATH}/devices/:id/status`, async (c) => {
   } catch (e) {
     console.error(e);
     return c.json({ error: e.message }, 500);
+  }
+});
+
+// Verify PIN and activate device (Admin uses this)
+app.post(`${BASE_PATH}/devices/verify-pin`, async (c) => {
+  try {
+    const body = await c.req.json();
+    const { pin, name } = body;
+
+    if (!pin) {
+      return c.json({ error: 'PIN is required' }, 400);
+    }
+
+    console.log('=== PIN Verification ===');
+    console.log('PIN provided:', pin);
+
+    // Find device by PIN
+    const allDevices = await kv.getByPrefix("device:");
+    const device = allDevices.find(d => d.pin === pin && d.status === 'pending');
+
+    if (!device) {
+      console.log('No pending device found with PIN:', pin);
+      return c.json({ error: 'Invalid PIN or device already activated' }, 404);
+    }
+
+    // Activate device and CLEAR PIN (one-time use)
+    device.status = 'active';
+    device.pin = null; // ✅ ONE-TIME USE - Clear PIN after activation
+    if (name && name.trim()) {
+      device.name = name.trim();
+    }
+    device.activatedAt = new Date().toISOString();
+
+    await kv.set(`device:${device.id}`, device);
+    console.log('Device activated:', device.id, 'Name:', device.name, 'PIN cleared');
+
+    return c.json(device);
+  } catch (error) {
+    console.error('Error in /devices/verify-pin:', error);
+    return c.json({ error: error.message }, 500);
   }
 });
 
