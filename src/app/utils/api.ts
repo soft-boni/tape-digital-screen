@@ -14,7 +14,9 @@ export async function apiFetch(path: string, options: RequestInit = {}) {
   const headers = {
     "Content-Type": "application/json",
     "apikey": SUPABASE_ANON_KEY, // Required by Supabase gateway
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    // CRITICAL: Authorization header is REQUIRED even for public endpoints
+    // Use session token if available, otherwise use anon key as Bearer token
+    "Authorization": `Bearer ${token || SUPABASE_ANON_KEY}`,
     ...options.headers,
   };
 
