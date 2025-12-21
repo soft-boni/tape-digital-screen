@@ -6,7 +6,7 @@ import { Button } from "../components/ui/button";
 
 type ViewState = 'not-connected' | 'connected' | 'playing' | 'settings';
 
-export default function Player() {
+export function Player() {
   const [pin, setPin] = useState<string | null>(null);
   const [viewState, setViewState] = useState<ViewState>('not-connected');
   const [loading, setLoading] = useState(true);
