@@ -265,9 +265,12 @@ app.post(`${BASE_PATH}/player/register`, async (c) => {
     let pin = '';
     let attempts = 0;
     const allDevices = await kv.getByPrefix("device:");
+    const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
     while (attempts < 10) {
-      pin = Math.floor(100000 + Math.random() * 900000).toString();
+      const part1 = Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+      const part2 = Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+      pin = `${part1}-${part2}`;
       const pinExists = allDevices.some(d => d.pin === pin);
       if (!pinExists) break;
       attempts++;
