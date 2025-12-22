@@ -390,11 +390,35 @@ app.get(`${BASE_PATH}/player/status`, async (c) => {
       }
     }
 
+    // Fetch user profile from Supabase if device has userId
+    let accountName = device.accountName || 'User';
+    let accountAvatar = null;
+
+    if (device.userId) {
+      try {
+        const supabase = getSupabase();
+        const { data: profile, error } = await supabase
+          .from('profiles')
+          .select('name, avatar_url')
+          .eq('id', device.userId)
+          .single();
+
+        if (!error && profile) {
+          accountName = profile.name || device.accountName || 'User';
+          accountAvatar = profile.avatar_url || null;
+        }
+      } catch (e) {
+        console.error('Failed to fetch profile:', e);
+        // Fallback to stored accountName
+      }
+    }
+
     return c.json({
       activated: device.activated,
       screenId: device.screenId,
       content,
-      accountName: device.accountName || 'User',
+      accountName,
+      accountAvatar,
       deviceName: device.name || 'Display Device'
     });
   } catch (e) {
