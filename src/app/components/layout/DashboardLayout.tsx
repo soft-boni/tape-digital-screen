@@ -141,8 +141,8 @@ export function DashboardLayout() {
     <div className="flex h-screen bg-slate-50">
       {/* Sidebar */}
       <aside className="w-64 bg-white border-r border-slate-200 flex flex-col">
-        <div className="p-6 border-b border-slate-100">
-          <TapeLogo width={100} />
+        <div className="h-16 px-6 border-b border-slate-200 flex items-center">
+          <TapeLogo width={80} />
         </div>
 
         <nav className="flex-1 p-4 space-y-1">

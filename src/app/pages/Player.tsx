@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../utils/api";
+import { supabase } from "../App";
 import { Loader2, Monitor, Settings as SettingsIcon, Play, RefreshCw, Sun, Volume2, X } from "lucide-react";
 import { QRCodeSVG } from 'qrcode.react';
 import { Button } from "../components/ui/button";
@@ -9,6 +10,8 @@ type ViewState = 'unregistered' | 'not-connected' | 'connected' | 'playing' | 's
 
 export function Player() {
   const [deviceId, setDeviceId] = useState<string | null>(null);
+  const [user, setUser] = useState<any>(null);
+  const [ownerId, setOwnerId] = useState<string | null>(null);
   const [pin, setPin] = useState<string | null>(null);
   const [viewState, setViewState] = useState<ViewState>('unregistered');
   const [loading, setLoading] = useState(true);
@@ -49,6 +52,42 @@ export function Player() {
     const interval = setInterval(() => checkActivationStatus(deviceId), 5000);
     return () => clearInterval(interval);
   }, [deviceId, viewState]);
+
+  // Fetch and sync owner profile data
+  useEffect(() => {
+    if (!ownerId) return;
+
+    const fetchOwnerProfile = async () => {
+      try {
+        // Fetch the owner's profile from Supabase
+        const { data: profile, error } = await supabase
+          .from('profiles')
+          .select('name, avatar_url')
+          .eq('id', ownerId)
+          .single();
+
+        if (error) {
+          console.error('Profile fetch error:', error);
+          return;
+        }
+
+        if (profile) {
+          console.log('✅ Profile fetched:', profile);
+          setAccountName(profile.name || 'User');
+          setAccountAvatar(profile.avatar_url || null);
+        }
+      } catch (error) {
+        console.error('Failed to fetch owner profile:', error);
+      }
+    };
+
+    // Fetch immediately
+    fetchOwnerProfile();
+
+    // Refresh every 30 seconds
+    const interval = setInterval(fetchOwnerProfile, 30000);
+    return () => clearInterval(interval);
+  }, [ownerId]);
 
   // Auto-advance content
   useEffect(() => {
@@ -226,10 +265,45 @@ export function Player() {
       if (res.activated) {
         console.log('✅ Device activated, content received:', res.content);
         console.log('📊 Content count:', res.content?.length || 0);
+        console.log('📋 Full response:', res);
         setViewState('connected');
         setContent(res.content || []);
         setAccountName(res.accountName || 'User');
         setAccountAvatar(res.accountAvatar || null);
+
+        // Try to get ownerId from response
+        if (res.ownerId) {
+          console.log('Setting ownerId from response:', res.ownerId);
+          setOwnerId(res.ownerId);
+        } else if (res.userId) {
+          console.log('Setting ownerId from userId:', res.userId);
+          setOwnerId(res.userId);
+        } else if (res.user_id) {
+          console.log('Setting ownerId from user_id:', res.user_id);
+          setOwnerId(res.user_id);
+        } else {
+          console.log('⚠️ No owner ID in response, fetching from Supabase...');
+          // Fallback: fetch device owner from Supabase
+          (async () => {
+            try {
+              const { data: device } = await supabase
+                .from('devices')
+                .select('user_id')
+                .eq('id', deviceId)
+                .maybeSingle();
+
+              if (device?.user_id) {
+                console.log('✅ Owner ID fetched from Supabase:', device.user_id);
+                setOwnerId(device.user_id);
+              } else {
+                console.log('❌ Could not fetch owner ID from Supabase');
+              }
+            } catch (error) {
+              console.error('Error fetching owner ID:', error);
+            }
+          })();
+        }
+
         setDeviceName(res.deviceName || "Samsung 55' Smart Display");
         // Clear PIN from localStorage once activated
         localStorage.removeItem('devicePin');
