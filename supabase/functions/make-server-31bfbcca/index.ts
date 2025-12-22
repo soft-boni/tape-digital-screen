@@ -130,6 +130,49 @@ app.post(`${BASE_PATH}/content`, async (c) => {
   }
 });
 
+// Update Content (e.g., rename)
+app.put(`${BASE_PATH}/content/:id`, async (c) => {
+  try {
+    const id = c.req.param("id");
+    const body = await c.req.json();
+    const existing = await kv.get(`content:${id}`);
+    if (!existing) return c.json({ error: "Content not found" }, 404);
+
+    const updated = { ...existing, ...body };
+    await kv.set(`content:${id}`, updated);
+    return c.json(updated);
+  } catch (e) {
+    console.error(e);
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// Delete Content
+app.delete(`${BASE_PATH}/content/:id`, async (c) => {
+  try {
+    const id = c.req.param("id");
+    const content = await kv.get(`content:${id}`);
+    if (!content) return c.json({ error: "Content not found" }, 404);
+
+    // Delete from KV store
+    await kv.del(`content:${id}`);
+
+    // Optional: Remove from screens that reference this content
+    const screens = await kv.getByPrefix("screen:");
+    for (const screen of screens) {
+      if (screen.content && screen.content.some(c => c.id === id || c.contentId === id)) {
+        const updatedContent = screen.content.filter(c => c.id !== id && c.contentId !== id);
+        await kv.set(`screen:${screen.id}`, { ...screen, content: updatedContent });
+      }
+    }
+
+    return c.json({ success: true });
+  } catch (e) {
+    console.error(e);
+    return c.json({ error: e.message }, 500);
+  }
+});
+
 // Get Signed Upload URL
 app.post(`${BASE_PATH}/storage/sign`, async (c) => {
   try {

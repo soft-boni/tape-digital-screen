@@ -404,7 +404,11 @@ export function Content() {
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           className="text-red-600 focus:text-red-600 focus:bg-red-50"
-                          onClick={() => deleteItem(item.id)}
+                          onSelect={(e) => {
+                            e.preventDefault();
+                            // Use setTimeout to let the menu close first, then show confirm
+                            setTimeout(() => deleteItem(item.id), 0);
+                          }}
                         >
                           Delete
                         </DropdownMenuItem>
