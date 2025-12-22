@@ -279,26 +279,29 @@ app.delete(`${BASE_PATH}/screens/:id`, async (c) => {
 app.post(`${BASE_PATH}/player/register`, async (c) => {
   try {
     console.log('=== Device Registration ===');
-    console.log('Request path:', c.req.path);
-    console.log('Request URL:', c.req.url);
-
     const body = await c.req.json().catch(() => ({}));
     const { ipAddress } = body;
 
-    console.log('IP:', ipAddress);
+    const supabase = getSupabase();
 
     // Generate unique PIN in BB8A-SDE7 format (alphanumeric)
     let pin = '';
     let attempts = 0;
-    const allDevices = await kv.getByPrefix("device:");
     const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
     while (attempts < 10) {
       const part1 = Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
       const part2 = Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
       pin = `${part1}-${part2}`;
-      const pinExists = allDevices.some(d => d.pin === pin);
-      if (!pinExists) break;
+
+      // Check if PIN already exists in Supabase
+      const { data: existing } = await supabase
+        .from('devices')
+        .select('id')
+        .eq('pin', pin)
+        .maybeSingle();
+
+      if (!existing) break;
       attempts++;
     }
 
@@ -306,28 +309,28 @@ app.post(`${BASE_PATH}/player/register`, async (c) => {
       return c.json({ error: 'Failed to generate unique PIN' }, 500);
     }
 
-    // Create device with activated=false
-    const deviceId = crypto.randomUUID();
+    // Create device in Supabase
     const userAgent = c.req.header('user-agent') || 'Unknown';
     const deviceName = extractDeviceName(userAgent);
 
-    const newDevice = {
-      id: deviceId,
-      pin,
-      name: deviceName,
-      activated: false,  // ⭐ Simple boolean
-      ipAddress,
-      screenId: null,
-      createdAt: new Date().toISOString(),
-      activatedAt: null,
-      lastSeen: new Date().toISOString()
-    };
+    const { data: newDevice, error } = await supabase
+      .from('devices')
+      .insert({
+        pin,
+        name: deviceName,
+        activated: false,
+        ip_address: ipAddress,
+        screen_id: null,
+      })
+      .select()
+      .single();
 
-    await kv.set(`device:${deviceId}`, newDevice);
-    console.log('Device created with PIN:', pin, 'ID:', deviceId);
+    if (error) throw error;
+
+    console.log('Device created with PIN:', pin, 'ID:', newDevice.id);
 
     return c.json({
-      deviceId,
+      deviceId: newDevice.id,
       pin,
       activated: false
     });
@@ -345,7 +348,16 @@ app.get(`${BASE_PATH}/player/status`, async (c) => {
       return c.json({ error: 'deviceId required' }, 400);
     }
 
-    const device = await kv.get(`device:${deviceId}`);
+    const supabase = getSupabase();
+
+    // Fetch device from Supabase
+    const { data: device, error: deviceError } = await supabase
+      .from('devices')
+      .select('*')
+      .eq('id', deviceId)
+      .maybeSingle();
+
+    if (deviceError) throw deviceError;
 
     if (!device) {
       // Device was deleted
@@ -356,13 +368,15 @@ app.get(`${BASE_PATH}/player/status`, async (c) => {
     }
 
     // Update last seen
-    device.lastSeen = new Date().toISOString();
-    await kv.set(`device:${device.id}`, device);
+    await supabase
+      .from('devices')
+      .update({ last_seen: new Date().toISOString() })
+      .eq('id', deviceId);
 
     // Return activation status and content if activated
     let content = [];
-    if (device.activated && device.screenId) {
-      const screen = await kv.get(`screen:${device.screenId}`);
+    if (device.activated && device.screen_id) {
+      const screen = await kv.get(`screen:${device.screen_id}`);
       if (screen && screen.content) {
         // Expand contentId references to full content objects
         const expandedContent = [];
@@ -375,7 +389,7 @@ app.get(`${BASE_PATH}/player/status`, async (c) => {
               expandedContent.push({
                 ...item,
                 type: contentData.type,
-                url: contentData.readUrl || contentData.url, // Frontend saves as 'readUrl'
+                url: contentData.readUrl || contentData.url,
                 name: contentData.name || contentData.fileName || 'Untitled'
               });
             } else {
@@ -390,32 +404,26 @@ app.get(`${BASE_PATH}/player/status`, async (c) => {
       }
     }
 
-    // Fetch user profile from Supabase if device has userId
-    let accountName = device.accountName || 'User';
+    // Fetch user profile from Supabase
+    let accountName = 'User';
     let accountAvatar = null;
 
-    if (device.userId) {
-      try {
-        const supabase = getSupabase();
-        const { data: profile, error } = await supabase
-          .from('profiles')
-          .select('name, avatar_url')
-          .eq('id', device.userId)
-          .single();
+    if (device.user_id) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('name, avatar_url')
+        .eq('id', device.user_id)
+        .maybeSingle();
 
-        if (!error && profile) {
-          accountName = profile.name || device.accountName || 'User';
-          accountAvatar = profile.avatar_url || null;
-        }
-      } catch (e) {
-        console.error('Failed to fetch profile:', e);
-        // Fallback to stored accountName
+      if (profile) {
+        accountName = profile.name || 'User';
+        accountAvatar = profile.avatar_url || null;
       }
     }
 
     return c.json({
       activated: device.activated,
-      screenId: device.screenId,
+      screenId: device.screen_id,
       content,
       accountName,
       accountAvatar,
@@ -470,9 +478,16 @@ app.post(`${BASE_PATH}/devices/activate`, async (c) => {
     console.log('=== Device Activation ===');
     console.log('PIN:', pin);
 
+    const supabase = getSupabase();
+
     // Find device by PIN
-    const allDevices = await kv.getByPrefix("device:");
-    const device = allDevices.find(d => d.pin === pin);
+    const { data: device, error: findError } = await supabase
+      .from('devices')
+      .select('*')
+      .eq('pin', pin)
+      .maybeSingle();
+
+    if (findError) throw findError;
 
     if (!device) {
       return c.json({ error: 'Invalid PIN' }, 404);
@@ -482,37 +497,44 @@ app.post(`${BASE_PATH}/devices/activate`, async (c) => {
       return c.json({ error: 'Device already activated' }, 400);
     }
 
-    // Activate device
-    device.activated = true;
-    device.activatedAt = new Date().toISOString();
-
-    // Store account name and userId from authenticated user
+    // Get authenticated user ID
     const authHeader = c.req.header('Authorization');
+    let userId = null;
+
     if (authHeader) {
       try {
         const token = authHeader.replace('Bearer ', '');
-        const supabaseClient = getSupabase();
-        const { data: { user } } = await supabaseClient.auth.getUser(token);
+        const { data: { user } } = await supabase.auth.getUser(token);
         if (user) {
-          device.accountName = user.email?.split('@')[0] || 'User';
-          device.userId = user.id; // Store userId for notification tracking
+          userId = user.id;
         }
       } catch (e) {
         console.log('Could not get user info:', e);
-        device.accountName = 'User';
       }
-    } else {
-      device.accountName = 'User';
     }
+
+    // Update device
+    const updates: any = {
+      activated: true,
+      activated_at: new Date().toISOString(),
+      user_id: userId,
+      pin: null, // Clear PIN after activation
+    };
 
     if (name && name.trim()) {
-      device.name = name.trim();
+      updates.name = name.trim();
     }
 
-    await kv.set(`device:${device.id}`, device);
-    console.log('Device activated:', device.id, device.name, 'Account:', device.accountName);
+    const { error: updateError } = await supabase
+      .from('devices')
+      .update(updates)
+      .eq('id', device.id);
 
-    return c.json({ success: true, device });
+    if (updateError) throw updateError;
+
+    console.log('Device activated:', device.id, name || device.name);
+
+    return c.json({ success: true, device: { ...device, ...updates } });
   } catch (error) {
     console.error('Activation error:', error);
     return c.json({ error: error.message }, 500);
