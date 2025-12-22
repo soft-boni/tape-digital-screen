@@ -637,19 +637,31 @@ app.put(`${BASE_PATH}/devices/:id`, async (c) => {
 
     const supabase = getSupabase();
 
+    // Prepare update data - handle both camelCase and snake_case
+    const updateData: any = {};
+
+    // Handle screen assignment
+    if (body.screenId !== undefined) {
+      updateData.screen_id = body.screenId;
+    } else if (body.screen_id !== undefined) {
+      updateData.screen_id = body.screen_id;
+    }
+
+    // Handle name
+    if (body.name !== undefined) {
+      updateData.name = body.name;
+    }
+
     // Update device in Supabase
     const { data, error } = await supabase
       .from('devices')
-      .update({
-        screen_id: body.screenId,
-        name: body.name,
-        ...body
-      })
+      .update(updateData)
       .eq('id', id)
       .select()
       .single();
 
     if (error) {
+      console.error('Device update error:', error);
       if (error.code === 'PGRST116') {
         return c.json({ error: "Device not found" }, 404);
       }
@@ -658,7 +670,7 @@ app.put(`${BASE_PATH}/devices/:id`, async (c) => {
 
     return c.json(data);
   } catch (e) {
-    console.error(e);
+    console.error('Device update exception:', e);
     return c.json({ error: e.message }, 500);
   }
 });
