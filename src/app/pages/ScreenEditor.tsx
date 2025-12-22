@@ -244,7 +244,7 @@ export function ScreenEditor() {
     );
 
     if (doubleConfirm !== screen.name) {
-      toast.error("Screen name doesn't match. Deletion cancelled.");
+      toast.error("Program name doesn't match. Deletion cancelled.");
       return;
     }
 
@@ -252,7 +252,7 @@ export function ScreenEditor() {
       await apiFetch(`/screens/${screen.id}`, {
         method: "DELETE"
       });
-      toast.success("Screen deleted successfully");
+      toast.success("Program deleted successfully");
       // Navigate back to screens list
       window.location.href = "/screens";
     } catch (error) {
@@ -423,7 +423,7 @@ export function ScreenEditor() {
                 <Card>
                   <CardContent className="space-y-4 pt-6">
                     <div className="space-y-2">
-                      <Label>Screen Name</Label>
+                      <Label>Program Name</Label>
                       <Input
                         value={screen.name}
                         onChange={(e) => setScreen({ ...screen, name: e.target.value })}
@@ -499,7 +499,7 @@ export function ScreenEditor() {
                       className="w-full sm:w-auto"
                     >
                       <Trash2 className="w-4 h-4 mr-2" />
-                      Delete Screen
+                      Delete Program
                     </Button>
                   </CardContent>
                 </Card>
@@ -519,7 +519,7 @@ export function ScreenEditor() {
       <Dialog open={isAddDeviceOpen} onOpenChange={setIsAddDeviceOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Add Device to Screen</DialogTitle>
+            <DialogTitle>Add Device to Program</DialogTitle>
           </DialogHeader>
 
           {/* Mode Toggle */}

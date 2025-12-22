@@ -79,12 +79,12 @@ export function Screens() {
       // 2. Assign Device if selected
       if (formData.selectedDeviceId) {
         await apiFetch(`/devices/${formData.selectedDeviceId}`, {
-            method: "PUT",
-            body: JSON.stringify({ screenId: newScreen.id })
+          method: "PUT",
+          body: JSON.stringify({ screenId: newScreen.id })
         });
       }
 
-      toast.success("Screen created successfully!");
+      toast.success("Program created successfully!");
       setIsModalOpen(false);
       // Reset
       setStep(1);
@@ -98,7 +98,7 @@ export function Screens() {
       loadData();
       navigate(`/screens/${newScreen.id}`);
     } catch (error: any) {
-        toast.error(error.message || "Failed to create screen");
+      toast.error(error.message || "Failed to create screen");
     }
   };
 
@@ -108,17 +108,17 @@ export function Screens() {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold tracking-tight">Screens</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Programs</h1>
         <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
           <DialogTrigger asChild>
             <Button>
               <Plus className="w-4 h-4 mr-2" />
-              Create Screen
+              Create Program
             </Button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-[600px]">
             <DialogHeader>
-              <DialogTitle>Create New Screen (Step {step}/3)</DialogTitle>
+              <DialogTitle>Create New Program (Step {step}/3)</DialogTitle>
               <DialogDescription>
                 {step === 1 && "Basic Details"}
                 {step === 2 && "Add Content"}
@@ -131,25 +131,25 @@ export function Screens() {
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
                   <Label>Name</Label>
-                  <Input 
-                    value={formData.name} 
-                    onChange={(e) => setFormData({...formData, name: e.target.value})}
-                    placeholder="Lobby Display" 
+                  <Input
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    placeholder="Lobby Display"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label>Description</Label>
-                  <Input 
-                    value={formData.description} 
-                    onChange={(e) => setFormData({...formData, description: e.target.value})}
-                    placeholder="Main entrance screen" 
+                  <Input
+                    value={formData.description}
+                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    placeholder="Main entrance screen"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label>Resolution</Label>
-                  <Select 
-                    value={formData.resolution} 
-                    onValueChange={(val) => setFormData({...formData, resolution: val})}
+                  <Select
+                    value={formData.resolution}
+                    onValueChange={(val) => setFormData({ ...formData, resolution: val })}
                   >
                     <SelectTrigger>
                       <SelectValue />
@@ -168,62 +168,62 @@ export function Screens() {
             {step === 2 && (
               <div className="space-y-4 py-4 max-h-[300px] overflow-y-auto">
                 <div className="grid grid-cols-3 gap-2">
-                    {content.map(item => (
-                        <div key={item.id} className="relative aspect-square border rounded cursor-pointer overflow-hidden"
-                             onClick={() => {
-                                 const selected = formData.selectedContent.includes(item.id);
-                                 setFormData({
-                                     ...formData,
-                                     selectedContent: selected 
-                                        ? formData.selectedContent.filter(id => id !== item.id)
-                                        : [...formData.selectedContent, item.id]
-                                 });
-                             }}>
-                            <img src={item.readUrl} className={`w-full h-full object-cover ${formData.selectedContent.includes(item.id) ? 'opacity-50' : ''}`} />
-                            {formData.selectedContent.includes(item.id) && (
-                                <div className="absolute inset-0 flex items-center justify-center bg-indigo-500/20">
-                                    <div className="w-4 h-4 bg-indigo-600 rounded-full" />
-                                </div>
-                            )}
+                  {content.map(item => (
+                    <div key={item.id} className="relative aspect-square border rounded cursor-pointer overflow-hidden"
+                      onClick={() => {
+                        const selected = formData.selectedContent.includes(item.id);
+                        setFormData({
+                          ...formData,
+                          selectedContent: selected
+                            ? formData.selectedContent.filter(id => id !== item.id)
+                            : [...formData.selectedContent, item.id]
+                        });
+                      }}>
+                      <img src={item.readUrl} className={`w-full h-full object-cover ${formData.selectedContent.includes(item.id) ? 'opacity-50' : ''}`} />
+                      {formData.selectedContent.includes(item.id) && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-indigo-500/20">
+                          <div className="w-4 h-4 bg-indigo-600 rounded-full" />
                         </div>
-                    ))}
-                    {content.length === 0 && <div className="col-span-3 text-center text-muted-foreground">No content available.</div>}
+                      )}
+                    </div>
+                  ))}
+                  {content.length === 0 && <div className="col-span-3 text-center text-muted-foreground">No content available.</div>}
                 </div>
               </div>
             )}
 
             {/* Step 3: Device */}
             {step === 3 && (
-               <div className="space-y-4 py-4">
-                   <div className="space-y-2">
-                       <Label>Assign to Device (Optional)</Label>
-                       <Select 
-                        value={formData.selectedDeviceId} 
-                        onValueChange={(val) => setFormData({...formData, selectedDeviceId: val})}
-                       >
-                           <SelectTrigger>
-                               <SelectValue placeholder="Select a device..." />
-                           </SelectTrigger>
-                           <SelectContent>
-                               {devices.map(d => (
-                                   <SelectItem key={d.id} value={d.id}>{d.name} ({d.status})</SelectItem>
-                               ))}
-                           </SelectContent>
-                       </Select>
-                   </div>
-               </div>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label>Assign to Device (Optional)</Label>
+                  <Select
+                    value={formData.selectedDeviceId}
+                    onValueChange={(val) => setFormData({ ...formData, selectedDeviceId: val })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a device..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {devices.map(d => (
+                        <SelectItem key={d.id} value={d.id}>{d.name} ({d.status})</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
             )}
 
             <DialogFooter className="flex justify-between sm:justify-between">
-                {step > 1 ? (
-                    <Button variant="outline" onClick={prevStep}><ArrowLeft className="w-4 h-4 mr-2"/> Back</Button>
-                ) : <div/>}
-                
-                {step < 3 ? (
-                    <Button onClick={nextStep} disabled={!formData.name}>Next <ArrowRight className="w-4 h-4 ml-2"/></Button>
-                ) : (
-                    <Button onClick={handleCreate}>Create Screen</Button>
-                )}
+              {step > 1 ? (
+                <Button variant="outline" onClick={prevStep}><ArrowLeft className="w-4 h-4 mr-2" /> Back</Button>
+              ) : <div />}
+
+              {step < 3 ? (
+                <Button onClick={nextStep} disabled={!formData.name}>Next <ArrowRight className="w-4 h-4 ml-2" /></Button>
+              ) : (
+                <Button onClick={handleCreate}>Create Program</Button>
+              )}
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -240,16 +240,16 @@ export function Screens() {
               <p className="text-sm text-muted-foreground">{screen.description || "No description"}</p>
             </CardContent>
             <CardFooter>
-                <Button className="w-full" asChild>
-                    <Link to={`/screens/${screen.id}`}>Manage Content</Link>
-                </Button>
+              <Button className="w-full" asChild>
+                <Link to={`/screens/${screen.id}`}>Manage Content</Link>
+              </Button>
             </CardFooter>
           </Card>
         ))}
         {screens.length === 0 && !loading && (
-            <div className="col-span-full text-center py-12 text-muted-foreground">
-                No screens created yet.
-            </div>
+          <div className="col-span-full text-center py-12 text-muted-foreground">
+            No screens created yet.
+          </div>
         )}
       </div>
     </div>

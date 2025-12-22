@@ -180,7 +180,7 @@ export function Content() {
 
   const bulkAssign = async () => {
     if (!selectedScreenId) {
-      toast.error("Please select a screen");
+      toast.error("Please select a program");
       return;
     }
 
@@ -400,7 +400,7 @@ export function Content() {
                           Rename
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => assignSingle(item.id)}>
-                          Assign to Screen
+                          Assign to Program
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           className="text-red-600 focus:text-red-600 focus:bg-red-50"
@@ -474,16 +474,16 @@ export function Content() {
       {assignModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setAssignModalOpen(false)}>
           <div className="bg-white rounded-lg p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-xl font-bold mb-4">Assign to Screen</h2>
+            <h2 className="text-xl font-bold mb-4">Assign to Program</h2>
             <div className="space-y-4">
               <div>
-                <label className="text-sm font-medium mb-2 block">Select Screen</label>
+                <label className="text-sm font-medium mb-2 block">Select Program</label>
                 <select
                   className="w-full border rounded-md px-3 py-2"
                   value={selectedScreenId}
                   onChange={(e) => setSelectedScreenId(e.target.value)}
                 >
-                  <option value="">Choose a screen...</option>
+                  <option value="">Choose a program...</option>
                   {screens.map(screen => (
                     <option key={screen.id} value={screen.id}>{screen.name}</option>
                   ))}

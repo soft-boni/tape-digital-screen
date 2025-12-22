@@ -106,7 +106,7 @@ export function Devices() {
   const getScreenName = (id: string | null) => {
     if (!id) return "Unassigned";
     const screen = screens.find((s) => s.id === id);
-    return screen ? screen.name : "Unknown Screen";
+    return screen ? screen.name : "Unknown Program";
   };
 
   const isOnline = (lastSeen: string) => {
@@ -190,7 +190,7 @@ export function Devices() {
               <TableHead>Status</TableHead>
               <TableHead>Name</TableHead>
               <TableHead>IP Address</TableHead>
-              <TableHead>Assigned Screen</TableHead>
+              <TableHead>Assigned Program</TableHead>
               <TableHead>Last Seen</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>

@@ -30,7 +30,7 @@ export function Dashboard() {
 
   const statCards = [
     {
-      title: "Total Screens",
+      title: "Total Programs",
       value: stats.screensCount,
       icon: Monitor,
       color: "text-blue-600",
@@ -64,7 +64,7 @@ export function Dashboard() {
   return (
     <div className="space-y-6">
       <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-      
+
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {statCards.map((stat, index) => (
           <Card key={index}>
