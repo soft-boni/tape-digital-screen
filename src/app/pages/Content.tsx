@@ -2,12 +2,18 @@
 import { useEffect, useState, useRef } from "react";
 import { apiFetch } from "../utils/api";
 import { Button } from "../components/ui/button";
-import { Card, CardContent, CardFooter } from "../components/ui/card";
+import { Card, CardContent } from "../components/ui/card";
 import { Input } from "../components/ui/input";
-import { Search, Upload, FileImage, FileVideo, Trash2, CheckSquare, Square, Edit2, Monitor, X } from "lucide-react";
+import { Search, Upload, FileImage, FileVideo, Trash2, Monitor, MoreVertical } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "../components/ui/utils";
 import { formatDistanceToNow } from "date-fns";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../components/ui/dropdown-menu";
 
 interface ContentItem {
   id: string;
@@ -16,6 +22,13 @@ interface ContentItem {
   readUrl: string;
   createdAt: string;
   path?: string;
+  size?: number;
+}
+
+interface Screen {
+  id: string;
+  name: string;
+  content?: ContentItem[];
 }
 
 export function Content() {
@@ -26,7 +39,6 @@ export function Content() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Multi-select state
-  const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // Modal state
@@ -36,7 +48,7 @@ export function Content() {
   const [newName, setNewName] = useState("");
 
   // Screens for assignment
-  const [screens, setScreens] = useState<any[]>([]);
+  const [screens, setScreens] = useState<Screen[]>([]);
   const [selectedScreenId, setSelectedScreenId] = useState("");
 
   useEffect(() => {
@@ -86,7 +98,6 @@ export function Content() {
       const formData = new FormData();
       formData.append("file", file);
       formData.append("upload_preset", "digital_signage_unsigned");
-      formData.append("cloud_name", import.meta.env.VITE_CLOUDINARY_CLOUD_NAME);
 
       const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
       const resourceType = isImage ? "image" : "video";
@@ -113,6 +124,7 @@ export function Content() {
           type: isImage ? "image" : "video",
           readUrl: cloudinaryData.secure_url,
           path: cloudinaryData.public_id,
+          size: file.size,
         }),
       });
 
@@ -128,11 +140,6 @@ export function Content() {
   };
 
   // Multi-select functions
-  const toggleSelectionMode = () => {
-    setIsSelectionMode(!isSelectionMode);
-    setSelectedIds(new Set());
-  };
-
   const toggleSelection = (id: string) => {
     const newSelected = new Set(selectedIds);
     if (newSelected.has(id)) {
@@ -141,10 +148,6 @@ export function Content() {
       newSelected.add(id);
     }
     setSelectedIds(newSelected);
-  };
-
-  const selectAll = () => {
-    setSelectedIds(new Set(filteredContent.map(item => item.id)));
   };
 
   const clearSelection = () => {
@@ -166,7 +169,6 @@ export function Content() {
       toast.success("Items deleted successfully", { id: toastId });
       loadContent();
       setSelectedIds(new Set());
-      setIsSelectionMode(false);
     } catch (error) {
       toast.error("Failed to delete items", { id: toastId });
     }
@@ -195,7 +197,7 @@ export function Content() {
       toast.success("Content assigned successfully", { id: toastId });
       setAssignModalOpen(false);
       setSelectedIds(new Set());
-      setIsSelectionMode(false);
+      loadScreens(); // Reload to update assigned screens
     } catch (error) {
       toast.error("Failed to assign content", { id: toastId });
     }
@@ -223,41 +225,44 @@ export function Content() {
   const renameItem = async () => {
     if (!itemToRename || !newName.trim()) return;
 
+    const toastId = toast.loading("Renaming content...");
+
     try {
       await apiFetch(`/content/${itemToRename.id}`, {
         method: "PUT",
         body: JSON.stringify({ name: newName.trim() })
       });
-      toast.success("Content renamed");
-      loadContent();
+      toast.success("Content renamed successfully", { id: toastId });
+      await loadContent();
       setRenameModalOpen(false);
-    } catch (error) {
-      toast.error("Failed to rename content");
+      setItemToRename(null);
+      setNewName("");
+    } catch (error: any) {
+      console.error("Rename error:", error);
+      toast.error(error.message || "Failed to rename content", { id: toastId });
     }
   };
 
-  const assignSingle = async (item: ContentItem) => {
-    if (!selectedScreenId) {
-      toast.error("Please select a screen");
-      return;
-    }
+  const assignSingle = async (itemId: string) => {
+    setSelectedIds(new Set([itemId]));
+    setAssignModalOpen(true);
+  };
 
-    try {
-      const screen = await apiFetch(`/screens/${selectedScreenId}`);
-      const existingContent = screen.content || [];
+  // Helper functions
+  const formatFileSize = (bytes?: number) => {
+    if (!bytes) return "Unknown size";
+    const mb = bytes / (1024 * 1024);
+    return `${mb.toFixed(2)} MB`;
+  };
 
-      await apiFetch(`/screens/${selectedScreenId}`, {
-        method: "PUT",
-        body: JSON.stringify({
-          content: [...existingContent, item]
-        })
-      });
-
-      toast.success("Content assigned to screen");
-      setAssignModalOpen(false);
-    } catch (error) {
-      toast.error("Failed to assign content");
-    }
+  const getAssignedScreens = (contentId: string): string[] => {
+    const assignedScreenNames: string[] = [];
+    screens.forEach(screen => {
+      if (screen.content && screen.content.some(c => c.id === contentId)) {
+        assignedScreenNames.push(screen.name);
+      }
+    });
+    return assignedScreenNames;
   };
 
   const filteredContent = content.filter((item) =>
@@ -267,31 +272,23 @@ export function Content() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <h1 className="text-3xl font-bold tracking-tight">Content Library</h1>
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">My Content</h1>
+          <p className="text-sm text-muted-foreground mt-1">Upload, create and manage your content</p>
+        </div>
         <div className="flex gap-2 w-full sm:w-auto">
           <div className="relative flex-1 sm:w-64">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search content..."
+              placeholder="Search Device"
               className="pl-8"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          {isSelectionMode && (
-            <Button variant="outline" onClick={selectAll}>
-              Select All
-            </Button>
-          )}
-          <Button
-            variant={isSelectionMode ? "secondary" : "outline"}
-            onClick={toggleSelectionMode}
-          >
-            {isSelectionMode ? "Cancel" : "Select"}
-          </Button>
           <Button onClick={() => fileInputRef.current?.click()} disabled={uploading}>
             <Upload className="w-4 h-4 mr-2" />
-            {uploading ? "Uploading..." : "Upload"}
+            {uploading ? "Uploading..." : "Upload Content"}
           </Button>
           <input
             type="file"
@@ -304,20 +301,23 @@ export function Content() {
       </div>
 
       {/* Selection Toolbar */}
-      {isSelectionMode && selectedIds.size > 0 && (
+      {selectedIds.size > 0 && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground rounded-lg shadow-lg px-6 py-3 flex items-center gap-4 z-50">
           <span className="font-medium">{selectedIds.size} item(s) selected</span>
           <Button size="sm" variant="secondary" onClick={() => setAssignModalOpen(true)}>
             <Monitor className="w-4 h-4 mr-2" />
-            Assign to Screen
+            Assign
           </Button>
           <Button size="sm" variant="destructive" onClick={bulkDelete}>
             <Trash2 className="w-4 h-4 mr-2" />
             Delete
           </Button>
-          <Button size="sm" variant="ghost" onClick={clearSelection}>
-            <X className="w-4 h-4" />
-          </Button>
+          <button
+            className="ml-2 text-primary-foreground hover:text-primary-foreground/80"
+            onClick={clearSelection}
+          >
+            ✕
+          </button>
         </div>
       )}
 
@@ -325,67 +325,103 @@ export function Content() {
         <div>Loading content...</div>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-          {filteredContent.map((item) => (
-            <Card key={item.id} className={cn(
-              "overflow-hidden group cursor-pointer transition-all",
-              selectedIds.has(item.id) && "ring-2 ring-primary"
-            )}>
-              <div
-                className="aspect-square bg-slate-100 relative"
-                onClick={() => isSelectionMode && toggleSelection(item.id)}
-              >
-                {isSelectionMode && (
+          {filteredContent.map((item) => {
+            const assignedScreens = getAssignedScreens(item.id);
+
+            return (
+              <Card key={item.id} className={cn(
+                "overflow-hidden group transition-all relative",
+                selectedIds.has(item.id) && "ring-2 ring-primary"
+              )}>
+                <div
+                  className="aspect-[4/3] bg-slate-100 relative overflow-hidden cursor-pointer"
+                  onClick={() => toggleSelection(item.id)}
+                >
+                  {/* Checkbox */}
                   <div className="absolute top-2 left-2 z-10">
-                    {selectedIds.has(item.id) ? (
-                      <CheckSquare className="w-6 h-6 text-primary fill-primary" />
+                    <div className={cn(
+                      "w-5 h-5 rounded border-2 flex items-center justify-center transition-colors",
+                      selectedIds.has(item.id)
+                        ? "bg-primary border-primary"
+                        : "bg-white border-gray-300 group-hover:border-primary"
+                    )}>
+                      {selectedIds.has(item.id) && (
+                        <svg className="w-3 h-3 text-white" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
+                          <path d="M5 13l4 4L19 7"></path>
+                        </svg>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Three-dot menu */}
+                  <div className="absolute top-2 right-2 z-10" onClick={(e) => e.stopPropagation()}>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 bg-white/90 hover:bg-white"
+                        >
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => openRenameModal(item)}>
+                          Rename
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => assignSingle(item.id)}>
+                          Assign to Screen
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="text-destructive"
+                          onClick={() => deleteItem(item.id)}
+                        >
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+
+                  {item.type === "image" ? (
+                    <img
+                      src={item.readUrl}
+                      alt={item.name}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <video
+                      src={item.readUrl}
+                      className="w-full h-full object-cover"
+                    />
+                  )}
+
+                  {/* File type badge */}
+                  <div className="absolute bottom-2 left-2 bg-white/90 px-2 py-1 rounded text-xs flex items-center gap-1">
+                    {item.type === "image" ? <FileImage className="w-3 h-3 text-blue-600" /> : <FileVideo className="w-3 h-3 text-purple-600" />}
+                    <span className="capitalize">{item.type}</span>
+                  </div>
+                </div>
+
+                <CardContent className="p-3 space-y-1">
+                  <p className="text-sm font-medium truncate" title={item.name}>
+                    {item.name}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {formatFileSize(item.size)} • {formatDistanceToNow(new Date(item.createdAt), { addSuffix: true })}
+                  </p>
+                  <div className="text-xs text-muted-foreground">
+                    <span className="font-medium">Assigned To</span>
+                    <br />
+                    {assignedScreens.length > 0 ? (
+                      <span>{assignedScreens.join(", ")}</span>
                     ) : (
-                      <Square className="w-6 h-6 text-muted-foreground" />
+                      <span className="text-gray-400">Not assigned</span>
                     )}
                   </div>
-                )}
-                {item.type === "image" ? (
-                  <img
-                    src={item.readUrl}
-                    alt={item.name}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <video
-                    src={item.readUrl}
-                    className="w-full h-full object-cover"
-                  />
-                )}
-                <div className="absolute top-2 right-2 bg-white/90 p-1 rounded">
-                  {item.type === "image" ? <FileImage className="w-4 h-4 text-blue-600" /> : <FileVideo className="w-4 h-4 text-purple-600" />}
-                </div>
-              </div>
-              <CardContent className="p-3 space-y-2">
-                <p className="text-sm font-medium truncate" title={item.name}>
-                  {item.name}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {formatDistanceToNow(new Date(item.createdAt), { addSuffix: true })}
-                </p>
-                {!isSelectionMode && (
-                  <div className="flex gap-1 pt-2">
-                    <Button size="sm" variant="outline" className="flex-1" onClick={() => {
-                      setSelectedIds(new Set([item.id]));
-                      setAssignModalOpen(true);
-                    }}>
-                      <Monitor className="w-3 h-3 mr-1" />
-                      Assign
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => openRenameModal(item)}>
-                      <Edit2 className="w-3 h-3" />
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => deleteItem(item.id)}>
-                      <Trash2 className="w-3 h-3 text-destructive" />
-                    </Button>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          ))}
+                </CardContent>
+              </Card>
+            );
+          })}
           {filteredContent.length === 0 && (
             <div className="col-span-full text-center py-12 text-muted-foreground">
               No content found. Upload some images or videos!

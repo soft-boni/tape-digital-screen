@@ -61,7 +61,9 @@ export function Devices() {
         apiFetch("/devices"),
         apiFetch("/screens"),
       ]);
-      setDevices(devicesData);
+      // Filter out pending/non-activated devices - only show devices that have been claimed by admin
+      const activatedDevices = devicesData.filter((d: Device) => d.status !== 'pending' || d.name !== 'Unnamed Device');
+      setDevices(activatedDevices);
       setScreens(screensData);
     } catch (error) {
       toast.error("Failed to load devices");

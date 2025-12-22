@@ -16,6 +16,7 @@ export function Player() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [deviceName, setDeviceName] = useState("Samsung 55' Smart Display");
   const [accountName, setAccountName] = useState("User");
+  const [accountAvatar, setAccountAvatar] = useState<string | null>(null);
   const [showControls, setShowControls] = useState(true);
   const [brightness, setBrightness] = useState(100);
   const [volume, setVolume] = useState(50);
@@ -53,9 +54,12 @@ export function Player() {
   useEffect(() => {
     if (viewState !== 'playing' || content.length === 0) return;
 
+    const currentItem = content[currentIndex];
+    const duration = currentItem?.duration ? currentItem.duration * 1000 : 10000; // Use item duration or default to 10s
+
     const timeout = setTimeout(() => {
       setCurrentIndex((prev) => (prev + 1) % content.length);
-    }, 10000);
+    }, duration);
 
     return () => clearTimeout(timeout);
   }, [currentIndex, content, viewState]);
@@ -225,6 +229,7 @@ export function Player() {
         setViewState('connected');
         setContent(res.content || []);
         setAccountName(res.accountName || 'User');
+        setAccountAvatar(res.accountAvatar || null);
         setDeviceName(res.deviceName || "Samsung 55' Smart Display");
         // Clear PIN from localStorage once activated
         localStorage.removeItem('devicePin');
@@ -566,9 +571,17 @@ export function Player() {
             <p className="text-xs text-gray-600 mb-3">Manage account connected to this device</p>
             <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center">
-                  <Monitor className="w-5 h-5 text-gray-600" />
-                </div>
+                {accountAvatar ? (
+                  <img
+                    src={accountAvatar}
+                    alt={accountName}
+                    className="w-10 h-10 rounded-full object-cover"
+                  />
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 font-semibold">
+                    {accountName.charAt(0).toUpperCase()}
+                  </div>
+                )}
                 <div>
                   <p className="font-medium">{accountName}</p>
                   <p className="text-sm text-gray-600">Connected Account</p>

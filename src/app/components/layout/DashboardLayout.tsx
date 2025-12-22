@@ -15,11 +15,6 @@ import {
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "../ui/popover";
 import { Badge } from "../ui/badge";
 import { apiFetch } from "../../utils/api";
 
@@ -175,8 +170,8 @@ export function DashboardLayout() {
 
           <div className="flex items-center gap-4">
             {/* Notifications */}
-            <Popover>
-              <PopoverTrigger asChild>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="relative">
                   <Bell className="h-5 w-5" />
                   {unreadCount > 0 && (
@@ -185,10 +180,10 @@ export function DashboardLayout() {
                     </Badge>
                   )}
                 </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-80" align="end">
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-80">
+                <div className="space-y-2 p-2">
+                  <div className="flex items-center justify-between px-2">
                     <h4 className="font-semibold text-sm">Notifications</h4>
                     {unreadCount > 0 && (
                       <Badge variant="secondary" className="text-xs">
@@ -220,8 +215,8 @@ export function DashboardLayout() {
                     )}
                   </div>
                 </div>
-              </PopoverContent>
-            </Popover>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
             {/* Profile Dropdown */}
             <DropdownMenu>

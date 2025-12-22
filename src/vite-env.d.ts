@@ -1,4 +1,4 @@
-/// <function_calls reference types="vite/client" />
+/// <reference types="vite/client" />
 
 interface ImportMetaEnv {
     readonly VITE_CLOUDINARY_CLOUD_NAME: string;
