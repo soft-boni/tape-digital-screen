@@ -589,15 +589,17 @@ app.delete(`${BASE_PATH}/devices/:id`, async (c) => {
   try {
     const id = c.req.param('id');
 
-    const device = await kv.get(`device:${id}`);
-    if (!device) {
-      return c.json({ error: 'Device not found' }, 404);
-    }
+    const supabase = getSupabase();
 
-    // Delete the device
-    await kv.del(`device:${id}`);
+    // Delete from Supabase
+    const { error } = await supabase
+      .from('devices')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+
     console.log('Device deleted:', id);
-
     return c.json({ success: true });
   } catch (error) {
     console.error('Delete error:', error);
@@ -632,12 +634,29 @@ app.put(`${BASE_PATH}/devices/:id`, async (c) => {
   try {
     const id = c.req.param("id");
     const body = await c.req.json();
-    const device = await kv.get(`device:${id}`);
-    if (!device) return c.json({ error: "Not found" }, 404);
 
-    const updated = { ...device, ...body };
-    await kv.set(`device:${id}`, updated);
-    return c.json(updated);
+    const supabase = getSupabase();
+
+    // Update device in Supabase
+    const { data, error } = await supabase
+      .from('devices')
+      .update({
+        screen_id: body.screenId,
+        name: body.name,
+        ...body
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return c.json({ error: "Device not found" }, 404);
+      }
+      throw error;
+    }
+
+    return c.json(data);
   } catch (e) {
     console.error(e);
     return c.json({ error: e.message }, 500);
@@ -907,32 +926,39 @@ app.get(`${BASE_PATH}/devices`, async (c) => {
       }
     }
 
-    const devices = await kv.getByPrefix("device:");
+    const supabase = getSupabase();
 
-    // Track status changes for each device
+    // Fetch devices from Supabase
+    let query = supabase
+      .from('devices')
+      .select('*')
+      .eq('activated', true); // Only show activated devices
+
+    // Filter by user if authenticated
     if (userId) {
-      for (const device of devices) {
-        // Only track devices that belong to this user
-        if (device.activated && device.userId === userId) {
-          const deviceStatusKey = `device_status:${device.id}`;
-          const previousStatus = await kv.get(deviceStatusKey);
-
-          const now = new Date().getTime();
-          const lastSeen = new Date(device.lastSeen).getTime();
-          const isOnline = (now - lastSeen) < 120000; // 2 minutes
-          const currentStatus = isOnline ? 'online' : 'offline';
-
-          if (previousStatus !== currentStatus) {
-            await trackDeviceStatus(device, previousStatus, userId);
-            await kv.set(deviceStatusKey, currentStatus);
-          }
-        }
-      }
+      query = query.eq('user_id', userId);
     }
 
-    return c.json(devices);
+    const { data: devices, error } = await query.order('activated_at', { ascending: false });
+
+    if (error) throw error;
+
+    // Transform to match expected format
+    const formattedDevices = devices.map(device => ({
+      id: device.id,
+      name: device.name || 'Unnamed Device',
+      status: device.activated ? 'online' : 'pending',
+      lastSeen: device.last_seen || device.activated_at || device.created_at,
+      screenId: device.screen_id,
+      pin: device.pin,
+      ipAddress: device.ip_address,
+      userId: device.user_id,
+      activated: device.activated
+    }));
+
+    return c.json(formattedDevices);
   } catch (e) {
-    console.error(e);
+    console.error('Error fetching devices:', e);
     return c.json({ error: e.message }, 500);
   }
 });
