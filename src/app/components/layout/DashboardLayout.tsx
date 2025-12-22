@@ -5,7 +5,7 @@ import { TapeLogo } from "../TapeLogo";
 import { cn } from "../ui/utils";
 import { Button } from "../ui/button";
 import { supabase } from "../../App";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -47,6 +47,8 @@ export function DashboardLayout() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [notificationOpen, setNotificationOpen] = useState(false);
+  const notificationRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     loadUserProfile();
@@ -59,6 +61,20 @@ export function DashboardLayout() {
 
     return () => clearInterval(interval);
   }, []);
+
+  // Close notification dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (notificationRef.current && !notificationRef.current.contains(event.target as Node)) {
+        setNotificationOpen(false);
+      }
+    }
+
+    if (notificationOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [notificationOpen]);
 
   const loadUserProfile = async () => {
     try {
@@ -170,53 +186,62 @@ export function DashboardLayout() {
 
           <div className="flex items-center gap-4">
             {/* Notifications */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="relative">
-                  <Bell className="h-5 w-5" />
-                  {unreadCount > 0 && (
-                    <Badge className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center p-0 text-xs bg-red-500">
-                      {unreadCount > 9 ? '9+' : unreadCount}
-                    </Badge>
-                  )}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-80">
-                <div className="space-y-2 p-2">
-                  <div className="flex items-center justify-between px-2">
-                    <h4 className="font-semibold text-sm">Notifications</h4>
-                    {unreadCount > 0 && (
-                      <Badge variant="secondary" className="text-xs">
-                        {unreadCount} new
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="max-h-96 overflow-y-auto space-y-2">
-                    {notifications.length === 0 ? (
-                      <p className="text-sm text-muted-foreground text-center py-4">
-                        No notifications
-                      </p>
-                    ) : (
-                      notifications.map((notification) => (
-                        <div
-                          key={notification.id}
-                          className={cn(
-                            "p-3 rounded-lg border cursor-pointer hover:bg-slate-50 transition-colors",
-                            !notification.read && "bg-blue-50 border-blue-200"
-                          )}
-                          onClick={() => markNotificationAsRead(notification.id)}
-                        >
-                          <p className="text-sm font-medium">{notification.message}</p>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {new Date(notification.timestamp).toLocaleString()}
-                          </p>
-                        </div>
-                      ))
-                    )}
+            <div className="relative" ref={notificationRef}>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="relative"
+                onClick={() => setNotificationOpen(!notificationOpen)}
+              >
+                <Bell className="h-5 w-5" />
+                {unreadCount > 0 && (
+                  <Badge className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center p-0 text-xs bg-red-500">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </Badge>
+                )}
+              </Button>
+
+              {/* Notification Dropdown */}
+              {notificationOpen && (
+                <div className="absolute right-0 mt-2 w-80 bg-white rounded-md shadow-lg border z-50 max-h-96 overflow-hidden">
+                  <div className="p-4 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-semibold text-sm">Notifications</h4>
+                      {unreadCount > 0 && (
+                        <Badge variant="secondary" className="text-xs">
+                          {unreadCount} new
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="max-h-80 overflow-y-auto space-y-2">
+                      {notifications.length === 0 ? (
+                        <p className="text-sm text-muted-foreground text-center py-4">
+                          No notifications
+                        </p>
+                      ) : (
+                        notifications.map((notification) => (
+                          <div
+                            key={notification.id}
+                            className={cn(
+                              "p-3 rounded-lg border cursor-pointer hover:bg-slate-50 transition-colors",
+                              !notification.read && "bg-blue-50 border-blue-200"
+                            )}
+                            onClick={() => {
+                              markNotificationAsRead(notification.id);
+                            }}
+                          >
+                            <p className="text-sm font-medium">{notification.message}</p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {new Date(notification.timestamp).toLocaleString()}
+                            </p>
+                          </div>
+                        ))
+                      )}
+                    </div>
                   </div>
                 </div>
-              </DropdownMenuContent>
-            </DropdownMenu>
+              )}
+            </div>
 
             {/* Profile Dropdown */}
             <DropdownMenu>

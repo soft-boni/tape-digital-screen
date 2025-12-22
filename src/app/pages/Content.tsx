@@ -4,7 +4,7 @@ import { apiFetch } from "../utils/api";
 import { Button } from "../components/ui/button";
 import { Card, CardContent } from "../components/ui/card";
 import { Input } from "../components/ui/input";
-import { Search, Upload, FileImage, FileVideo, Trash2, Monitor, MoreVertical } from "lucide-react";
+import { Search, Upload, FileImage, FileVideo, Trash2, Monitor, MoreVertical, X as XIcon } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "../components/ui/utils";
 import { formatDistanceToNow } from "date-fns";
@@ -46,6 +46,9 @@ export function Content() {
   const [renameModalOpen, setRenameModalOpen] = useState(false);
   const [itemToRename, setItemToRename] = useState<ContentItem | null>(null);
   const [newName, setNewName] = useState("");
+
+  // Preview modal
+  const [previewItem, setPreviewItem] = useState<ContentItem | null>(null);
 
   // Screens for assignment
   const [screens, setScreens] = useState<Screen[]>([]);
@@ -140,7 +143,8 @@ export function Content() {
   };
 
   // Multi-select functions
-  const toggleSelection = (id: string) => {
+  const toggleSelection = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
     const newSelected = new Set(selectedIds);
     if (newSelected.has(id)) {
       newSelected.delete(id);
@@ -197,7 +201,7 @@ export function Content() {
       toast.success("Content assigned successfully", { id: toastId });
       setAssignModalOpen(false);
       setSelectedIds(new Set());
-      loadScreens(); // Reload to update assigned screens
+      loadScreens();
     } catch (error) {
       toast.error("Failed to assign content", { id: toastId });
     }
@@ -280,7 +284,7 @@ export function Content() {
           <div className="relative flex-1 sm:w-64">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search Device"
+              placeholder="Search content"
               className="pl-8"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -316,7 +320,7 @@ export function Content() {
             className="ml-2 text-primary-foreground hover:text-primary-foreground/80"
             onClick={clearSelection}
           >
-            ✕
+            <XIcon className="w-4 h-4" />
           </button>
         </div>
       )}
@@ -330,20 +334,20 @@ export function Content() {
 
             return (
               <Card key={item.id} className={cn(
-                "overflow-hidden group transition-all relative",
+                "overflow-visible group transition-all relative",
                 selectedIds.has(item.id) && "ring-2 ring-primary"
               )}>
                 <div
                   className="aspect-[4/3] bg-slate-100 relative overflow-hidden cursor-pointer"
-                  onClick={() => toggleSelection(item.id)}
+                  onClick={() => setPreviewItem(item)}
                 >
-                  {/* Checkbox */}
-                  <div className="absolute top-2 left-2 z-10">
+                  {/* Checkbox - only way to select */}
+                  <div className="absolute top-2 left-2 z-10" onClick={(e) => toggleSelection(item.id, e)}>
                     <div className={cn(
-                      "w-5 h-5 rounded border-2 flex items-center justify-center transition-colors",
+                      "w-5 h-5 rounded border-2 flex items-center justify-center transition-colors cursor-pointer",
                       selectedIds.has(item.id)
                         ? "bg-primary border-primary"
-                        : "bg-white border-gray-300 group-hover:border-primary"
+                        : "bg-white/90 border-gray-300 hover:border-primary"
                     )}>
                       {selectedIds.has(item.id) && (
                         <svg className="w-3 h-3 text-white" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
@@ -351,35 +355,6 @@ export function Content() {
                         </svg>
                       )}
                     </div>
-                  </div>
-
-                  {/* Three-dot menu */}
-                  <div className="absolute top-2 right-2 z-10" onClick={(e) => e.stopPropagation()}>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 bg-white/90 hover:bg-white"
-                        >
-                          <MoreVertical className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => openRenameModal(item)}>
-                          Rename
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => assignSingle(item.id)}>
-                          Assign to Screen
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          className="text-destructive"
-                          onClick={() => deleteItem(item.id)}
-                        >
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
                   </div>
 
                   {item.type === "image" ? (
@@ -403,9 +378,40 @@ export function Content() {
                 </div>
 
                 <CardContent className="p-3 space-y-1">
-                  <p className="text-sm font-medium truncate" title={item.name}>
-                    {item.name}
-                  </p>
+                  {/* Name and three-dot menu on same row */}
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-medium truncate flex-1" title={item.name}>
+                      {item.name}
+                    </p>
+
+                    {/* Three-dot menu */}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 flex-shrink-0"
+                        >
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="z-50">
+                        <DropdownMenuItem onClick={() => openRenameModal(item)}>
+                          Rename
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => assignSingle(item.id)}>
+                          Assign to Screen
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="text-red-600 focus:text-red-600 focus:bg-red-50"
+                          onClick={() => deleteItem(item.id)}
+                        >
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+
                   <p className="text-xs text-muted-foreground">
                     {formatFileSize(item.size)} • {formatDistanceToNow(new Date(item.createdAt), { addSuffix: true })}
                   </p>
@@ -427,6 +433,40 @@ export function Content() {
               No content found. Upload some images or videos!
             </div>
           )}
+        </div>
+      )}
+
+      {/* Preview Modal */}
+      {previewItem && (
+        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4" onClick={() => setPreviewItem(null)}>
+          <div className="relative max-w-4xl max-h-[90vh] w-full" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={() => setPreviewItem(null)}
+              className="absolute -top-12 right-0 text-white hover:text-gray-300"
+            >
+              <XIcon className="w-8 h-8" />
+            </button>
+            {previewItem.type === "image" ? (
+              <img
+                src={previewItem.readUrl}
+                alt={previewItem.name}
+                className="w-full h-full object-contain"
+              />
+            ) : (
+              <video
+                src={previewItem.readUrl}
+                controls
+                autoPlay
+                className="w-full h-full object-contain"
+              />
+            )}
+            <div className="mt-4 text-white text-center">
+              <p className="font-medium">{previewItem.name}</p>
+              <p className="text-sm text-gray-300 mt-1">
+                {formatFileSize(previewItem.size)} • Uploaded {formatDistanceToNow(new Date(previewItem.createdAt), { addSuffix: true })}
+              </p>
+            </div>
+          </div>
         </div>
       )}
 
@@ -472,6 +512,7 @@ export function Content() {
                 onChange={(e) => setNewName(e.target.value)}
                 placeholder="Enter new name..."
                 onKeyDown={(e) => e.key === 'Enter' && renameItem()}
+                autoFocus
               />
               <div className="flex gap-2 justify-end">
                 <Button variant="outline" onClick={() => setRenameModalOpen(false)}>Cancel</Button>
