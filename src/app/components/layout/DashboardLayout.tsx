@@ -20,7 +20,7 @@ import { apiFetch } from "../../utils/api";
 
 const NAV_ITEMS = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { label: "Programs", href: "/screens", icon: Monitor },
+  { label: "Programs", href: "/programs", icon: Monitor },
   { label: "Devices", href: "/devices", icon: Smartphone },
   { label: "Content", href: "/content", icon: Library },
 ];

@@ -75,7 +75,7 @@ export function Content() {
 
   const loadScreens = async () => {
     try {
-      const data = await apiFetch("/screens");
+      const data = await apiFetch("/programs");
       setScreens(data);
     } catch (error) {
       console.error("Failed to load screens", error);
@@ -187,11 +187,11 @@ export function Content() {
     const toastId = toast.loading(`Assigning ${selectedIds.size} items...`);
 
     try {
-      const screen = await apiFetch(`/screens/${selectedScreenId}`);
+      const screen = await apiFetch(`/programs/${selectedScreenId}`);
       const existingContent = screen.content || [];
       const selectedContent = content.filter(item => selectedIds.has(item.id));
 
-      await apiFetch(`/screens/${selectedScreenId}`, {
+      await apiFetch(`/programs/${selectedScreenId}`, {
         method: "PUT",
         body: JSON.stringify({
           content: [...existingContent, ...selectedContent]

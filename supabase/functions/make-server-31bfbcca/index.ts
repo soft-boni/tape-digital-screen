@@ -12,6 +12,7 @@ const app = new Hono();
 app.use("*", cors({
   origin: [
     "http://localhost:5173",
+    "http://localhost:5174",
     "https://tape-screen.vercel.app",
     "https://tape-screen-*.vercel.app" // Preview deployments
   ],
@@ -157,12 +158,12 @@ app.delete(`${BASE_PATH}/content/:id`, async (c) => {
     // Delete from KV store
     await kv.del(`content:${id}`);
 
-    // Optional: Remove from screens that reference this content
-    const screens = await kv.getByPrefix("screen:");
-    for (const screen of screens) {
-      if (screen.content && screen.content.some(c => c.id === id || c.contentId === id)) {
-        const updatedContent = screen.content.filter(c => c.id !== id && c.contentId !== id);
-        await kv.set(`screen:${screen.id}`, { ...screen, content: updatedContent });
+    // Optional: Remove from programs that reference this content
+    const programs = await kv.getByPrefix("program:");
+    for (const program of programs) {
+      if (program.content && program.content.some(c => c.id === id || c.contentId === id)) {
+        const updatedContent = program.content.filter(c => c.id !== id && c.contentId !== id);
+        await kv.set(`program:${program.id}`, { ...program, content: updatedContent });
       }
     }
 
@@ -234,61 +235,138 @@ app.post(`${BASE_PATH}/storage/read-url`, async (c) => {
 });
 
 
-// --- Screen Routes ---
+// --- Program Routes ---
 
-// List Screens
-app.get(`${BASE_PATH}/screens`, async (c) => {
+// List Programs
+app.get(`${BASE_PATH}/programs`, async (c) => {
   try {
-    const screens = await kv.getByPrefix("screen:");
-    return c.json(screens);
+    const supabase = getSupabase();
+
+    // Get auth token to filter by user
+    const authHeader = c.req.header('Authorization');
+    let userId = null;
+
+    if (authHeader) {
+      try {
+        const token = authHeader.replace('Bearer ', '');
+        const { data: { user } } = await supabase.auth.getUser(token);
+        if (user) {
+          userId = user.id;
+        }
+      } catch (e) {
+        console.log('Could not get user info:', e);
+      }
+    }
+
+    // Fetch programs from Supabase
+    const query = supabase
+      .from('programs')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (userId) {
+      query.eq('user_id', userId);
+    }
+
+    const { data: programs, error } = await query;
+
+    if (error) throw error;
+
+    return c.json(programs || []);
   } catch (e) {
     console.error(e);
     return c.json({ error: e.message }, 500);
   }
 });
 
-// Get Screen
-app.get(`${BASE_PATH}/screens/:id`, async (c) => {
+
+// Get Program
+app.get(`${BASE_PATH}/programs/:id`, async (c) => {
   try {
     const id = c.req.param("id");
-    const screen = await kv.get(`screen:${id}`);
-    if (!screen) return c.json({ error: "Not found" }, 404);
-    return c.json(screen);
+    const supabase = getSupabase();
+
+    const { data: program, error } = await supabase
+      .from('programs')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!program) return c.json({ error: "Not found" }, 404);
+
+    return c.json(program);
   } catch (e) {
     console.error(e);
     return c.json({ error: e.message }, 500);
   }
 });
 
-// Create Screen
-app.post(`${BASE_PATH}/screens`, async (c) => {
+// Create Program
+app.post(`${BASE_PATH}/programs`, async (c) => {
   try {
     const body = await c.req.json();
-    const id = crypto.randomUUID();
-    const newScreen = {
-      ...body,
-      id,
-      content: [], // Array of content IDs or objects
-      createdAt: new Date().toISOString()
-    };
-    await kv.set(`screen:${id}`, newScreen);
-    return c.json(newScreen);
+    const supabase = getSupabase();
+
+    // Get user ID from auth
+    const authHeader = c.req.header('Authorization');
+    let userId = null;
+
+    if (authHeader) {
+      try {
+        const token = authHeader.replace('Bearer ', '');
+        const { data: { user } } = await supabase.auth.getUser(token);
+        if (user) {
+          userId = user.id;
+        }
+      } catch (e) {
+        console.log('Could not get user info:', e);
+      }
+    }
+
+    const { data: newProgram, error } = await supabase
+      .from('programs')
+      .insert({
+        ...body,
+        user_id: userId,
+        content: body.content || [],
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return c.json(newProgram);
   } catch (e) {
     console.error(e);
     return c.json({ error: e.message }, 500);
   }
 });
 
-// Update Screen (e.g. add content)
-app.put(`${BASE_PATH}/screens/:id`, async (c) => {
+// Update Program (e.g. add content)
+app.put(`${BASE_PATH}/programs/:id`, async (c) => {
   try {
     const id = c.req.param("id");
     const body = await c.req.json();
-    const existing = await kv.get(`screen:${id}`);
-    if (!existing) return c.json({ error: "Not found" }, 404);
+    const supabase = getSupabase();
 
-    const updated = { ...existing, ...body };
-    await kv.set(`screen:${id}`, updated);
+    const { data: updated, error } = await supabase
+      .from('programs')
+      .update({
+        ...body,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return c.json({ error: "Not found" }, 404);
+      }
+      throw error;
+    }
+
     return c.json(updated);
   } catch (e) {
     console.error(e);
@@ -296,18 +374,26 @@ app.put(`${BASE_PATH}/screens/:id`, async (c) => {
   }
 });
 
-// Delete Screen
-app.delete(`${BASE_PATH}/screens/:id`, async (c) => {
+// Delete Program
+app.delete(`${BASE_PATH}/programs/:id`, async (c) => {
   try {
     const id = c.req.param("id");
-    await kv.del(`screen:${id}`);
-    // Optional: unassign devices
-    const devices = await kv.getByPrefix("device:");
-    for (const device of devices) {
-      if (device.screenId === id) {
-        await kv.set(`device:${device.id}`, { ...device, screenId: null });
-      }
-    }
+    const supabase = getSupabase();
+
+    // Delete from Supabase
+    const { error } = await supabase
+      .from('programs')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+
+    // Unassign devices
+    await supabase
+      .from('devices')
+      .update({ program_id: null })
+      .eq('program_id', id);
+
     return c.json({ success: true });
   } catch (e) {
     console.error(e);
@@ -418,14 +504,25 @@ app.get(`${BASE_PATH}/player/status`, async (c) => {
 
     // Return activation status and content if activated
     let content = [];
+    let backgroundMusic = null;
     if (device.activated && device.screen_id) {
-      const screen = await kv.get(`screen:${device.screen_id}`);
-      if (screen && screen.content) {
+      // Fetch program from Supabase instead of KV store
+      const { data: program, error: programError } = await supabase
+        .from('programs')
+        .select('*')
+        .eq('id', device.program_id)
+        .maybeSingle();
+
+      if (programError) {
+        console.error('Error fetching program:', programError);
+      }
+
+      if (program && program.content) {
         // Expand contentId references to full content objects
         const expandedContent = [];
-        for (const item of screen.content) {
+        for (const item of program.content) {
           if (item.contentId) {
-            // Lookup the actual content by ID
+            // Lookup the actual content by ID from KV store
             const contentData = await kv.get(`content:${item.contentId}`);
             if (contentData) {
               // Merge content details with playlist item
@@ -444,6 +541,13 @@ app.get(`${BASE_PATH}/player/status`, async (c) => {
           }
         }
         content = expandedContent;
+      }
+
+      // Get background music from program
+      if (program && program.background_music) {
+        backgroundMusic = program.background_music;
+      } else if (program && program.backgroundMusic) {
+        backgroundMusic = program.backgroundMusic;
       }
     }
 
@@ -468,6 +572,7 @@ app.get(`${BASE_PATH}/player/status`, async (c) => {
       activated: device.activated,
       screenId: device.screen_id,
       content,
+      backgroundMusic,
       accountName,
       accountAvatar,
       deviceName: device.name || 'Display Device'
@@ -629,6 +734,59 @@ app.post(`${BASE_PATH}/devices/claim`, async (c) => {
   }
 });
 
+// MIGRATE DATA - Recover old KV screens to Supabase Programs
+app.post(`${BASE_PATH}/migrate-data`, async (c) => {
+  try {
+    const supabase = getSupabase();
+    console.log('Starting migration...');
+
+    // 1. Fetch old screens from KV
+    const screens = await kv.getByPrefix("screen:");
+    console.log(`Found ${screens.length} screens in KV store`);
+
+    let migratedCount = 0;
+
+    for (const screen of screens) {
+      // Check if already exists in Supabase
+      const { data: existing } = await supabase
+        .from('programs')
+        .select('id')
+        .eq('id', screen.id)
+        .maybeSingle();
+
+      if (!existing) {
+        // Create program in Supabase
+        const { error } = await supabase
+          .from('programs')
+          .insert({
+            id: screen.id,
+            name: screen.name || 'Untitled Program',
+            description: screen.description,
+            resolution: screen.resolution || '1920x1080',
+            content: screen.content || [],
+            background_music: screen.backgroundMusic || screen.background_music,
+            created_at: new Date().toISOString()
+          });
+
+        if (error) {
+          console.error(`Failed to migrate screen ${screen.id}:`, error);
+        } else {
+          migratedCount++;
+        }
+      }
+    }
+
+    return c.json({
+      success: true,
+      message: `Migrated ${migratedCount} programs from KV store`,
+      totalFound: screens.length
+    });
+  } catch (e) {
+    console.error('Migration error:', e);
+    return c.json({ error: e.message }, 500);
+  }
+});
+
 // Update Device (Assign screen, etc)
 app.put(`${BASE_PATH}/devices/:id`, async (c) => {
   try {
@@ -640,11 +798,15 @@ app.put(`${BASE_PATH}/devices/:id`, async (c) => {
     // Prepare update data - handle both camelCase and snake_case
     const updateData: any = {};
 
-    // Handle screen assignment
-    if (body.screenId !== undefined) {
-      updateData.screen_id = body.screenId;
+    // Handle program assignment (map from screenId/programId)
+    if (body.programId !== undefined) {
+      updateData.program_id = body.programId;
+    } else if (body.program_id !== undefined) {
+      updateData.program_id = body.program_id;
+    } else if (body.screenId !== undefined) {
+      updateData.program_id = body.screenId; // Legacy support
     } else if (body.screen_id !== undefined) {
-      updateData.screen_id = body.screen_id;
+      updateData.program_id = body.screen_id; // Legacy support
     }
 
     // Handle name
@@ -690,7 +852,7 @@ app.delete(`${BASE_PATH}/devices/:id`, async (c) => {
 // Stats
 app.get(`${BASE_PATH}/dashboard/stats`, async (c) => {
   try {
-    const screens = await kv.getByPrefix("screen:");
+    const programs = await kv.getByPrefix("program:");
     const devices = await kv.getByPrefix("device:");
     const content = await kv.getByPrefix("content:");
 
@@ -701,7 +863,7 @@ app.get(`${BASE_PATH}/dashboard/stats`, async (c) => {
     });
 
     return c.json({
-      screensCount: screens.length,
+      programsCount: programs.length,
       devicesCount: devices.length,
       onlineDevicesCount: onlineDevices.length,
       contentCount: content.length

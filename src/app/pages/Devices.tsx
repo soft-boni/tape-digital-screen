@@ -59,7 +59,7 @@ export function Devices() {
     try {
       const [devicesData, screensData] = await Promise.all([
         apiFetch("/devices"),
-        apiFetch("/screens"),
+        apiFetch("/programs"),
       ]);
       // Filter out pending/non-activated devices - only show devices that have been claimed by admin
       const activatedDevices = devicesData.filter((d: Device) => d.status !== 'pending' || d.name !== 'Unnamed Device');

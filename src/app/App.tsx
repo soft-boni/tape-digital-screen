@@ -6,8 +6,8 @@ import { projectId, publicAnonKey } from "../../utils/supabase/info";
 import { DashboardLayout } from "./components/layout/DashboardLayout";
 import { LoginPage } from "./pages/Auth";
 import { Dashboard } from "./pages/Dashboard";
-import { Screens } from "./pages/Screens";
-import { ScreenEditor } from "./pages/ScreenEditor";
+import { Screens } from "./pages/Prgrams";
+import { ScreenEditor } from "./pages/ProgramEditor";
 import { Devices } from "./pages/Devices";
 import { Content } from "./pages/Content";
 import { Player } from "./pages/Player";
@@ -66,8 +66,8 @@ export default function App() {
           <Route element={<DashboardLayout />}>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/screens" element={<Screens />} />
-            <Route path="/screens/:id" element={<ScreenEditor />} />
+            <Route path="/programs" element={<Screens />} />
+            <Route path="/programs/:id" element={<ScreenEditor />} />
             <Route path="/devices" element={<Devices />} />
             <Route path="/content" element={<Content />} />
             <Route path="/profile/edit" element={<EditProfile />} />

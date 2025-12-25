@@ -45,7 +45,7 @@ export function Screens() {
   const loadData = async () => {
     try {
       const [sData, dData, cData] = await Promise.all([
-        apiFetch("/screens"),
+        apiFetch("/programs"),
         apiFetch("/devices"),
         apiFetch("/content"),
       ]);
@@ -62,7 +62,7 @@ export function Screens() {
   const handleCreate = async () => {
     try {
       // 1. Create Screen
-      const newScreen = await apiFetch("/screens", {
+      const newScreen = await apiFetch("/programs", {
         method: "POST",
         body: JSON.stringify({
           name: formData.name,
@@ -96,7 +96,7 @@ export function Screens() {
         selectedDeviceId: "",
       });
       loadData();
-      navigate(`/screens/${newScreen.id}`);
+      navigate(`/programs/${newScreen.id}`);
     } catch (error: any) {
       toast.error(error.message || "Failed to create screen");
     }
@@ -241,7 +241,7 @@ export function Screens() {
             </CardContent>
             <CardFooter>
               <Button className="w-full" asChild>
-                <Link to={`/screens/${screen.id}`}>Manage Content</Link>
+                <Link to={`/programs/${screen.id}`}>Manage Content</Link>
               </Button>
             </CardFooter>
           </Card>

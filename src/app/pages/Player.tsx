@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { apiFetch } from "../utils/api";
 import { supabase } from "../App";
 import { Loader2, Monitor, Settings as SettingsIcon, Play, RefreshCw, Sun, Volume2, X } from "lucide-react";
@@ -24,6 +24,9 @@ export function Player() {
   const [brightness, setBrightness] = useState(100);
   const [volume, setVolume] = useState(50);
   const [registrationError, setRegistrationError] = useState<string | null>(null);
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const [backgroundMusic, setBackgroundMusic] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
 
   // Check for existing device on mount
   useEffect(() => {
@@ -89,7 +92,7 @@ export function Player() {
     return () => clearInterval(interval);
   }, [ownerId]);
 
-  // Auto-advance content
+  // Auto-advance content with transitions
   useEffect(() => {
     if (viewState !== 'playing' || content.length === 0) return;
 
@@ -97,7 +100,18 @@ export function Player() {
     const duration = currentItem?.duration ? currentItem.duration * 1000 : 10000; // Use item duration or default to 10s
 
     const timeout = setTimeout(() => {
-      setCurrentIndex((prev) => (prev + 1) % content.length);
+      const transition = currentItem?.transition || 'fade';
+      const transitionDuration = currentItem?.transitionDuration || 500;
+
+      if (transition !== 'none') {
+        setIsTransitioning(true);
+        setTimeout(() => {
+          setCurrentIndex((prev) => (prev + 1) % content.length);
+          setTimeout(() => setIsTransitioning(false), transitionDuration / 2);
+        }, transitionDuration / 2);
+      } else {
+        setCurrentIndex((prev) => (prev + 1) % content.length);
+      }
     }, duration);
 
     return () => clearTimeout(timeout);
@@ -110,6 +124,27 @@ export function Player() {
     const timeout = setTimeout(() => setShowControls(false), 5000);
     return () => clearTimeout(timeout);
   }, [showControls, viewState]);
+
+  // Update audio volume when volume state changes
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.volume = volume / 100;
+    }
+  }, [volume]);
+
+  // Play background music when entering playing state or when backgroundMusic changes
+  useEffect(() => {
+    if (viewState === 'playing' && backgroundMusic && audioRef.current) {
+      // Try to play audio - handle autoplay policy
+      const playPromise = audioRef.current.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(error => {
+          console.warn('Background music autoplay was blocked:', error);
+          console.log('User interaction may be required to start audio');
+        });
+      }
+    }
+  }, [viewState, backgroundMusic]);
 
   async function registerDevice() {
     try {
@@ -271,6 +306,12 @@ export function Player() {
         setAccountName(res.accountName || 'User');
         setAccountAvatar(res.accountAvatar || null);
 
+        // Load background music if exists
+        if (res.backgroundMusic) {
+          console.log('🎵 Background music found:', res.backgroundMusic);
+          setBackgroundMusic(res.backgroundMusic);
+        }
+
         // Try to get ownerId from response
         if (res.ownerId) {
           console.log('Setting ownerId from response:', res.ownerId);
@@ -337,6 +378,13 @@ export function Player() {
       const res = await apiFetch(`/player/status?deviceId=${deviceId}`);
       console.log('🔄 Sync content received:', res.content);
       setContent(res.content || []);
+
+      // Sync background music too
+      if (res.backgroundMusic) {
+        setBackgroundMusic(res.backgroundMusic);
+      } else {
+        setBackgroundMusic(null);
+      }
     } catch (error) {
       console.error('Sync failed:', error);
     }
@@ -566,6 +614,14 @@ export function Player() {
               onClick={() => {
                 if (content.length > 0) {
                   setViewState('playing');
+                  // Trigger audio playback after user click (for autoplay policy)
+                  setTimeout(() => {
+                    if (backgroundMusic && audioRef.current) {
+                      audioRef.current.play().catch(err => {
+                        console.warn('Failed to play background music:', err);
+                      });
+                    }
+                  }, 100);
                 } else {
                   alert('No content assigned to this device. Please assign a screen with content from the admin dashboard.');
                 }
@@ -739,42 +795,82 @@ export function Player() {
       );
     }
 
+    // Get transition styles helper function
+    const getTransitionStyle = (item: any) => {
+      const transition = item?.transition || 'fade';
+      const transitionDuration = item?.transitionDuration || 500;
+
+      const baseStyle = {
+        transition: `all ${transitionDuration}ms ease-in-out`,
+        width: '100%',
+        height: '100%',
+      };
+
+      if (!isTransitioning) return baseStyle;
+
+      switch (transition) {
+        case 'fade':
+          return { ...baseStyle, opacity: 0 };
+        case 'slide':
+          return { ...baseStyle, transform: 'translateX(-100%)' };
+        case 'zoom':
+          return { ...baseStyle, transform: 'scale(0)' };
+        default:
+          return baseStyle;
+      }
+    };
+
     return (
       <div
         className="h-screen w-full bg-black relative"
         onMouseMove={() => setShowControls(true)}
       >
         {/* Content */}
-        {currentItem?.type === 'image' ? (
-          <img
-            src={currentItem.url}
-            alt="Content"
-            className="w-full h-full object-contain"
-            onError={(e) => {
-              console.error('❌ Image failed to load:', currentItem.url);
-              e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="300"%3E%3Crect fill="%23333" width="400" height="300"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" fill="white"%3EImage Load Failed%3C/text%3E%3C/svg%3E';
-            }}
-          />
-        ) : currentItem?.type === 'video' ? (
-          <video
-            src={currentItem.url}
-            className="w-full h-full object-contain"
-            autoPlay
-            muted
-            playsInline
-            onEnded={() => setCurrentIndex((prev) => (prev + 1) % content.length)}
-            onError={(e) => {
-              console.error('❌ Video failed to load:', currentItem.url);
-            }}
-          />
-        ) : (
-          <div className="h-screen w-full flex items-center justify-center text-white">
-            <div className="text-center">
-              <p className="text-2xl">Unknown content type: {currentItem?.type}</p>
-              <p className="text-gray-400 mt-2">URL: {currentItem?.url}</p>
+        <div style={getTransitionStyle(currentItem)}>
+          {currentItem?.type === 'image' ? (
+            <img
+              src={currentItem.url}
+              alt="Content"
+              className="w-full h-full object-contain"
+              onError={(e) => {
+                console.error('❌ Image failed to load:', currentItem.url);
+                e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="300"%3E%3Crect fill="%23333" width="400" height="300"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" fill="white"%3EImage Load Failed%3C/text%3E%3C/svg%3E';
+              }}
+            />
+          ) : currentItem?.type === 'video' ? (
+            <video
+              src={currentItem.url}
+              className="w-full h-full object-contain"
+              autoPlay
+              muted={volume === 0}
+              playsInline
+              onEnded={() => {
+                const transition = currentItem?.transition || 'fade';
+                const transitionDuration = currentItem?.transitionDuration || 500;
+
+                if (transition !== 'none') {
+                  setIsTransitioning(true);
+                  setTimeout(() => {
+                    setCurrentIndex((prev) => (prev + 1) % content.length);
+                    setTimeout(() => setIsTransitioning(false), transitionDuration / 2);
+                  }, transitionDuration / 2);
+                } else {
+                  setCurrentIndex((prev) => (prev + 1) % content.length);
+                }
+              }}
+              onError={(e) => {
+                console.error('❌ Video failed to load:', currentItem.url);
+              }}
+            />
+          ) : (
+            <div className="h-screen w-full flex items-center justify-center text-white">
+              <div className="text-center">
+                <p className="text-2xl">Unknown content type: {currentItem?.type}</p>
+                <p className="text-gray-400 mt-2">URL: {currentItem?.url}</p>
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Controls Overlay */}
         {showControls && (
@@ -819,6 +915,17 @@ export function Player() {
               </button>
             </div>
           </>
+        )}
+
+        {/* Background Music */}
+        {backgroundMusic && (
+          <audio
+            ref={audioRef}
+            src={backgroundMusic}
+            autoPlay
+            loop
+            className="hidden"
+          />
         )}
       </div>
     );

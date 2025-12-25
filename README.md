@@ -9,8 +9,5 @@
 
   Run `npm run dev` to start the development server.
 
-  Supabase Credentials: 
-  Email: fidahiv624@arugy.com
-  Password: 05282220@Boni
 
   

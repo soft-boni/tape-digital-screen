@@ -14,7 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { toast } from "sonner";
 
 // --- Draggable Item Component ---
-const DraggableItem = ({ item, index, moveItem, removeItem, updateDuration, contentDetails }: any) => {
+const DraggableItem = ({ item, index, moveItem, removeItem, updateDuration, updateTransition, updateTransitionDuration, updateVolume, contentDetails }: any) => {
   const ref = useRef<HTMLDivElement>(null);
 
   const [{ isDragging }, drag] = useDrag({
@@ -43,13 +43,13 @@ const DraggableItem = ({ item, index, moveItem, removeItem, updateDuration, cont
   return (
     <div
       ref={ref}
-      className={`flex items-center gap-3 p-3 bg-white border rounded-lg mb-2 shadow-sm ${isDragging ? "opacity-50" : "opacity-100"
+      className={`flex items-start gap-3 p-4 bg-white border rounded-lg mb-3 shadow-sm transition-shadow hover:shadow-md ${isDragging ? "opacity-50" : "opacity-100"
         }`}
     >
-      <div className="cursor-move text-slate-400 hover:text-slate-600">
+      <div className="cursor-move text-slate-400 hover:text-slate-600 pt-1">
         <GripVertical className="w-5 h-5" />
       </div>
-      <div className="w-12 h-12 bg-slate-100 rounded overflow-hidden flex-shrink-0">
+      <div className="w-16 h-16 bg-slate-100 rounded-lg overflow-hidden flex-shrink-0 border">
         {details.type === "image" ? (
           <img src={details.readUrl} className="w-full h-full object-cover" />
         ) : (
@@ -57,21 +57,82 @@ const DraggableItem = ({ item, index, moveItem, removeItem, updateDuration, cont
         )}
       </div>
       <div className="flex-1 min-w-0">
-        <p className="font-medium text-sm truncate">{details.name}</p>
-        <p className="text-xs text-muted-foreground uppercase">{details.type}</p>
-      </div>
-      <div className="flex items-center gap-2">
-        <Input
-          type="number"
-          className="w-20 h-8 text-right"
-          value={item.duration}
-          onChange={(e) => updateDuration(index, parseInt(e.target.value) || 5)}
-          min={1}
-        />
-        <span className="text-xs text-muted-foreground w-6">sec</span>
-        <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => removeItem(index)}>
-          <Trash2 className="w-4 h-4" />
-        </Button>
+        <div className="flex items-start justify-between mb-3">
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-sm truncate">{details.name}</p>
+            <p className="text-xs text-muted-foreground uppercase mt-0.5">{details.type}</p>
+          </div>
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:bg-red-50 -mt-1" onClick={() => removeItem(index)}>
+            <Trash2 className="w-4 h-4" />
+          </Button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          {/* Duration Control */}
+          <div className="bg-slate-50 border rounded-lg p-3">
+            <label className="text-xs font-medium text-slate-700 mb-2 block">Duration</label>
+            <div className="flex items-center gap-2">
+              <Input
+                type="number"
+                className="flex-1 h-8 text-center"
+                value={item.duration}
+                onChange={(e) => updateDuration(index, parseInt(e.target.value) || 5)}
+                min={1}
+              />
+              <span className="text-xs text-muted-foreground whitespace-nowrap">sec</span>
+            </div>
+          </div>
+
+          {/* Transition Controls */}
+          <div className="bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-200 rounded-lg p-3">
+            <label className="text-xs font-medium text-indigo-900 mb-2 block">Transition</label>
+            <select
+              className="w-full text-xs border border-indigo-200 rounded-md px-2 py-1.5 bg-white mb-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+              value={item.transition || 'fade'}
+              onChange={(e) => updateTransition(index, e.target.value)}
+            >
+              <option value="none">⚡ None</option>
+              <option value="fade">✨ Fade</option>
+              <option value="slide">➡️ Slide</option>
+              <option value="zoom">🔍 Zoom</option>
+            </select>
+            {item.transition !== 'none' && (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-indigo-700">Speed</span>
+                  <span className="text-xs font-medium text-indigo-900">{item.transitionDuration || 500}ms</span>
+                </div>
+                <input
+                  type="range"
+                  min="100"
+                  max="2000"
+                  step="100"
+                  value={item.transitionDuration || 500}
+                  onChange={(e) => updateTransitionDuration(index, parseInt(e.target.value))}
+                  className="w-full h-1.5 bg-indigo-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                />
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Volume Control (for videos only) */}
+        {details.type === 'video' && (
+          <div className="bg-slate-50 border rounded-lg p-3 mt-3">
+            <label className="text-xs font-medium text-slate-700 mb-2 block">Video Volume</label>
+            <div className="flex items-center gap-3">
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={item.volume ?? 100}
+                onChange={(e) => updateVolume(index, parseInt(e.target.value))}
+                className="flex-1 h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+              />
+              <span className="text-xs font-medium text-slate-700 w-10 text-right">{item.volume ?? 100}%</span>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -79,11 +140,14 @@ const DraggableItem = ({ item, index, moveItem, removeItem, updateDuration, cont
 
 
 // --- Preview Player Component ---
-const PreviewPlayer = ({ playlist, contentDetails }: any) => {
+const PreviewPlayer = ({ playlist, contentDetails, backgroundMusic }: any) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const [volume, setVolume] = useState(50);
   const timerRef = useRef<any>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
 
   const currentItem = playlist[currentIndex];
   const currentDetails = currentItem
@@ -91,13 +155,37 @@ const PreviewPlayer = ({ playlist, contentDetails }: any) => {
     : null;
 
   const handleNext = useCallback(() => {
-    setCurrentIndex((prev) => (prev + 1) % playlist.length);
-    setProgress(0);
-  }, [playlist.length]);
+    const transition = currentItem?.transition || 'fade';
+    const duration = currentItem?.transitionDuration || 500;
+
+    if (transition !== 'none') {
+      setIsTransitioning(true);
+      setTimeout(() => {
+        setCurrentIndex((prev) => (prev + 1) % playlist.length);
+        setProgress(0);
+        setTimeout(() => setIsTransitioning(false), duration / 2);
+      }, duration / 2);
+    } else {
+      setCurrentIndex((prev) => (prev + 1) % playlist.length);
+      setProgress(0);
+    }
+  }, [playlist.length, currentItem]);
 
   const handlePrev = () => {
-    setCurrentIndex((prev) => (prev - 1 + playlist.length) % playlist.length);
-    setProgress(0);
+    const transition = currentItem?.transition || 'fade';
+    const duration = currentItem?.transitionDuration || 500;
+
+    if (transition !== 'none') {
+      setIsTransitioning(true);
+      setTimeout(() => {
+        setCurrentIndex((prev) => (prev - 1 + playlist.length) % playlist.length);
+        setProgress(0);
+        setTimeout(() => setIsTransitioning(false), duration / 2);
+      }, duration / 2);
+    } else {
+      setCurrentIndex((prev) => (prev - 1 + playlist.length) % playlist.length);
+      setProgress(0);
+    }
   };
 
   useEffect(() => {
@@ -119,6 +207,13 @@ const PreviewPlayer = ({ playlist, contentDetails }: any) => {
     return () => clearInterval(timerRef.current);
   }, [isPlaying, currentItem, handleNext]);
 
+  // Update audio volume
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.volume = volume / 100;
+    }
+  }, [volume]);
+
   if (!playlist.length || !currentDetails) {
     return (
       <div className="w-full aspect-video bg-black flex items-center justify-center text-white/50">
@@ -127,21 +222,46 @@ const PreviewPlayer = ({ playlist, contentDetails }: any) => {
     );
   }
 
+  // Get transition styles
+  const transition = currentItem?.transition || 'fade';
+  const transitionDuration = currentItem?.transitionDuration || 500;
+
+  const getTransitionStyle = () => {
+    const baseStyle = {
+      transition: `all ${transitionDuration}ms ease-in-out`,
+    };
+
+    if (!isTransitioning) return baseStyle;
+
+    switch (transition) {
+      case 'fade':
+        return { ...baseStyle, opacity: 0 };
+      case 'slide':
+        return { ...baseStyle, transform: 'translateX(-100%)' };
+      case 'zoom':
+        return { ...baseStyle, transform: 'scale(0)' };
+      default:
+        return baseStyle;
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden shadow-xl border border-slate-800">
-        {currentDetails.type === "image" ? (
-          <img src={currentDetails.readUrl} className="w-full h-full object-contain" />
-        ) : (
-          <video
-            src={currentDetails.readUrl}
-            className="w-full h-full object-contain"
-            autoPlay={isPlaying}
-            muted
-            loop={false}
-            onEnded={handleNext}
-          />
-        )}
+        <div style={getTransitionStyle()}>
+          {currentDetails.type === "image" ? (
+            <img src={currentDetails.readUrl} className="w-full h-full object-contain" />
+          ) : (
+            <video
+              src={currentDetails.readUrl}
+              className="w-full h-full object-contain"
+              autoPlay={isPlaying}
+              muted
+              loop={false}
+              onEnded={handleNext}
+            />
+          )}
+        </div>
 
         {/* Progress Bar Overlay */}
         <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/20">
@@ -150,6 +270,15 @@ const PreviewPlayer = ({ playlist, contentDetails }: any) => {
             style={{ width: `${progress}%` }}
           />
         </div>
+
+        {/* Transition Info Badge */}
+        {transition !== 'none' && (
+          <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-sm text-white text-xs px-3 py-1.5 rounded-full border border-white/20">
+            {transition === 'fade' && '✨'} {transition === 'slide' && '➡️'} {transition === 'zoom' && '🔍'}
+            <span className="ml-1.5 font-medium">{transition}</span>
+            <span className="ml-1.5 text-white/70">{transitionDuration}ms</span>
+          </div>
+        )}
       </div>
 
       <div className="flex items-center justify-center gap-4">
@@ -167,6 +296,17 @@ const PreviewPlayer = ({ playlist, contentDetails }: any) => {
       <div className="text-center text-sm text-muted-foreground">
         Now Playing: <span className="font-medium text-foreground">{currentDetails.name}</span>
       </div>
+
+      {/* Background Music */}
+      {backgroundMusic && (
+        <audio
+          ref={audioRef}
+          src={backgroundMusic}
+          autoPlay={isPlaying}
+          loop
+          className="hidden"
+        />
+      )}
     </div>
   );
 };
@@ -186,6 +326,10 @@ export function ScreenEditor() {
   const [deviceMode, setDeviceMode] = useState<"existing" | "new">("existing"); // Toggle between add modes
   const [newDeviceName, setNewDeviceName] = useState("");
   const [newDevicePin, setNewDevicePin] = useState("");
+  const [backgroundMusic, setBackgroundMusic] = useState<string | null>(null); // Background music URL
+  const [backgroundMusicName, setBackgroundMusicName] = useState<string | null>(null); // Background music filename
+  const [uploadingMusic, setUploadingMusic] = useState(false);
+  const musicInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadData();
@@ -194,7 +338,7 @@ export function ScreenEditor() {
   const loadData = async () => {
     try {
       const [sData, cData, dData] = await Promise.all([
-        apiFetch(`/screens/${id}`),
+        apiFetch(`/programs/${id}`),
         apiFetch("/content"),
         apiFetch("/devices"),
       ]);
@@ -202,6 +346,12 @@ export function ScreenEditor() {
       setAllContent(cData);
       setAllDevices(dData);
       setPlaylist(sData.content || []);
+
+      // Load background music if exists
+      if (sData.backgroundMusic) {
+        setBackgroundMusic(sData.backgroundMusic);
+        setBackgroundMusicName(sData.backgroundMusicName || 'Background Music');
+      }
 
       // Filter devices assigned to this screen
       const assigned = dData.filter((d: any) => d.screenId === id);
@@ -218,8 +368,10 @@ export function ScreenEditor() {
       const updatedScreen = {
         ...screen,
         content: playlist,
+        backgroundMusic,
+        backgroundMusicName,
       };
-      await apiFetch(`/screens/${id}`, {
+      await apiFetch(`/programs/${id}`, {
         method: "PUT",
         body: JSON.stringify(updatedScreen),
       });
@@ -249,12 +401,12 @@ export function ScreenEditor() {
     }
 
     try {
-      await apiFetch(`/screens/${screen.id}`, {
+      await apiFetch(`/programs/${screen.id}`, {
         method: "DELETE"
       });
       toast.success("Program deleted successfully");
       // Navigate back to screens list
-      window.location.href = "/screens";
+      window.location.href = "/programs";
     } catch (error) {
       toast.error("Failed to delete screen");
     }
@@ -277,14 +429,91 @@ export function ScreenEditor() {
     });
   };
 
+  const updateTransition = (index: number, transition: string) => {
+    setPlaylist(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], transition };
+      return updated;
+    });
+  };
+
+  const updateTransitionDuration = (index: number, transitionDuration: number) => {
+    setPlaylist(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], transitionDuration };
+      return updated;
+    });
+  };
+
+  const updateVolume = (index: number, volume: number) => {
+    setPlaylist(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], volume };
+      return updated;
+    });
+  };
+
   const removeItem = (index: number) => {
     setPlaylist(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleMusicUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate audio file
+    if (!file.type.startsWith("audio/")) {
+      toast.error("Please select an audio file (MP3, WAV, etc.)");
+      return;
+    }
+
+    setUploadingMusic(true);
+    const toastId = toast.loading("Uploading background music...");
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("upload_preset", "digital_signage_unsigned");
+
+      const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
+
+      const uploadResponse = await fetch(
+        `https://api.cloudinary.com/v1_1/${cloudName}/video/upload`,
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
+
+      if (!uploadResponse.ok) {
+        const error = await uploadResponse.json();
+        throw new Error(error.error?.message || "Upload failed");
+      }
+
+      const cloudinaryData = await uploadResponse.json();
+      setBackgroundMusic(cloudinaryData.secure_url);
+      setBackgroundMusicName(file.name);
+      toast.success("Music uploaded! Don't forget to save changes.", { id: toastId });
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error.message || "Upload failed", { id: toastId });
+    } finally {
+      setUploadingMusic(false);
+      if (musicInputRef.current) musicInputRef.current.value = "";
+    }
   };
 
   const addContentToPlaylist = (contentId: string) => {
     setPlaylist(prev => [
       ...prev,
-      { contentId, duration: 10, order: prev.length }
+      {
+        contentId,
+        duration: 10,
+        order: prev.length,
+        transition: 'fade',
+        transitionDuration: 500,
+        volume: 100
+      }
     ]);
     toast.success("Added to timeline");
   };
@@ -408,6 +637,9 @@ export function ScreenEditor() {
                       moveItem={moveItem}
                       removeItem={removeItem}
                       updateDuration={updateDuration}
+                      updateTransition={updateTransition}
+                      updateTransitionDuration={updateTransitionDuration}
+                      updateVolume={updateVolume}
                       contentDetails={allContent}
                     />
                   ))}
@@ -481,6 +713,60 @@ export function ScreenEditor() {
                         </Button>
                       </div>
                     </div>
+
+                    {/* Background Music Section */}
+                    <div className="space-y-2 pt-4 border-t">
+                      <Label className="text-base">Background Music</Label>
+                      <div className="border rounded-lg p-4 space-y-3">
+                        <p className="text-sm text-muted-foreground">
+                          Add background music that will loop during content playback
+                        </p>
+                        {backgroundMusic ? (
+                          <div className="flex items-center justify-between p-3 bg-slate-50 rounded-md">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center">
+                                <span className="text-lg">🎵</span>
+                              </div>
+                              <div>
+                                <p className="font-medium text-sm">{backgroundMusicName || 'Background Music'}</p>
+                                <p className="text-xs text-muted-foreground">Loop playback</p>
+                              </div>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => {
+                                setBackgroundMusic(null);
+                                setBackgroundMusicName(null);
+                              }}
+                              className="text-red-500 hover:text-red-600 hover:bg-red-50"
+                            >
+                              <X className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="text-center py-4 border-2 border-dashed rounded-lg">
+                            <p className="text-sm text-muted-foreground mb-2">No background music</p>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => musicInputRef.current?.click()}
+                              disabled={uploadingMusic}
+                            >
+                              <Plus className="w-4 h-4 mr-2" />
+                              {uploadingMusic ? 'Uploading...' : 'Upload Music'}
+                            </Button>
+                            <input
+                              type="file"
+                              ref={musicInputRef}
+                              className="hidden"
+                              accept="audio/*"
+                              onChange={handleMusicUpload}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </CardContent>
                 </Card>
 
@@ -510,7 +796,7 @@ export function ScreenEditor() {
           {/* Right Column: Preview */}
           <div className="flex flex-col gap-4">
             <h3 className="font-semibold">Live Preview</h3>
-            <PreviewPlayer playlist={playlist} contentDetails={allContent} />
+            <PreviewPlayer playlist={playlist} contentDetails={allContent} backgroundMusic={backgroundMusic} />
           </div>
         </div>
       </div>
