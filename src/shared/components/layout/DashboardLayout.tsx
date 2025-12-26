@@ -1,10 +1,10 @@
 
 import { Link, useLocation, Outlet, useNavigate } from "react-router-dom";
 import { LayoutDashboard, Monitor, Smartphone, Library, LogOut, Settings, Bell, User, Edit } from "lucide-react";
-import { TapeLogo } from "../TapeLogo";
-import { cn } from "../ui/utils";
-import { Button } from "../ui/button";
-import { supabase } from "../../App";
+import { TapeLogo } from "@/shared/components/TapeLogo";
+import { cn } from "@/shared/components/ui/utils";
+import { Button } from "@/shared/components/ui/button";
+import { supabase } from "@/App";
 import { useEffect, useState, useRef } from "react";
 import {
   DropdownMenu,
@@ -13,16 +13,17 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "../ui/dropdown-menu";
-import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
-import { Badge } from "../ui/badge";
-import { apiFetch } from "../../utils/api";
+} from "@/shared/components/ui/dropdown-menu";
+import { Avatar, AvatarFallback, AvatarImage } from "@/shared/components/ui/avatar";
+import { Badge } from "@/shared/components/ui/badge";
+import { apiFetch } from "@/shared/utils/api";
 
 const NAV_ITEMS = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Programs", href: "/programs", icon: Monitor },
   { label: "Devices", href: "/devices", icon: Smartphone },
   { label: "Content", href: "/content", icon: Library },
+  { label: "Settings", href: "/settings", icon: Settings },
 ];
 
 interface Notification {
@@ -38,6 +39,7 @@ interface UserProfile {
   name: string;
   email: string;
   avatarUrl: string | null;
+  plan?: string;
 }
 
 export function DashboardLayout() {
@@ -86,6 +88,7 @@ export function DashboardLayout() {
             name: profile.name || user.email?.split('@')[0] || 'User',
             email: user.email || '',
             avatarUrl: profile.avatarUrl || null,
+            plan: profile.plan || 'Free',
           });
         } catch {
           // Profile doesn't exist yet, use defaults
@@ -93,6 +96,7 @@ export function DashboardLayout() {
             name: user.email?.split('@')[0] || 'User',
             email: user.email || '',
             avatarUrl: null,
+            plan: 'Free',
           });
         }
       }
@@ -263,7 +267,12 @@ export function DashboardLayout() {
               <DropdownMenuContent align="end" className="w-56 z-50">
                 <DropdownMenuLabel>
                   <div className="flex flex-col space-y-1">
-                    <p className="text-sm font-medium">{userProfile?.name || 'User'}</p>
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium">{userProfile?.name || 'User'}</p>
+                      <Badge variant="outline" className="text-xs py-0 h-5">
+                        {userProfile?.plan || 'Free'}
+                      </Badge>
+                    </div>
                     <p className="text-xs text-muted-foreground">{userProfile?.email}</p>
                   </div>
                 </DropdownMenuLabel>

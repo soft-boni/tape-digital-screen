@@ -1,11 +1,11 @@
 
-import { supabase } from "../App";
-import { projectId } from "../../../utils/supabase/info";
+import { supabase } from "@/App";
+import { projectId } from "@/shared/utils/supabase/info";
 
 const BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-31bfbcca`;
 
 // Get anon key for Supabase gateway
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+import { publicAnonKey as SUPABASE_ANON_KEY } from "@/shared/utils/supabase/info";
 
 export async function apiFetch(path: string, options: RequestInit = {}) {
   const { data: { session } } = await supabase.auth.getSession();

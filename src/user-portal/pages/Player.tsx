@@ -1,9 +1,9 @@
 import { useEffect, useState, useRef } from "react";
 import { Loader2, Monitor, Play, Pause, RefreshCw, Volume2, Music, X, Settings, ArrowLeft } from "lucide-react";
 import { QRCodeSVG } from 'qrcode.react';
-import { Button } from "../components/ui/button";
-import { TapeLogo } from "../components/TapeLogo";
-import { cn } from "../components/ui/utils";
+import { Button } from "@/shared/components/ui/button";
+import { TapeLogo } from "@/shared/components/TapeLogo";
+import { cn } from "@/shared/components/ui/utils";
 
 type ViewState = 'unregistered' | 'not-connected' | 'connected' | 'playing' | 'settings';
 
@@ -151,7 +151,7 @@ export function Player() {
         ipAddress = (await res.json()).ip;
       } catch (e) { }
 
-      const { projectId, publicAnonKey } = await import('../../../utils/supabase/info');
+      const { projectId, publicAnonKey } = await import('@/shared/utils/supabase/info');
       const BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-31bfbcca`;
 
       const response = await fetch(`${BASE_URL}/player/register`, {
@@ -178,7 +178,7 @@ export function Player() {
 
   async function checkActivationStatus(devId: string) {
     try {
-      const { projectId, publicAnonKey } = await import('../../../utils/supabase/info');
+      const { projectId, publicAnonKey } = await import('@/shared/utils/supabase/info');
       const BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-31bfbcca`;
 
       const response = await fetch(`${BASE_URL}/player/status?deviceId=${devId}`, {

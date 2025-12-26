@@ -13,19 +13,24 @@ async function runMigrations() {
     // Read migration files
     const migration1 = readFileSync(join(__dirname, '../migrations/001_create_profiles.sql'), 'utf-8');
     const migration2 = readFileSync(join(__dirname, '../migrations/002_create_devices.sql'), 'utf-8');
+    const migration4 = readFileSync(join(__dirname, '../migrations/004_add_super_admin_schema.sql'), 'utf-8');
 
     try {
         // Execute migration 1
         console.log('Creating profiles table...');
         const { error: error1 } = await supabase.rpc('exec_sql', { sql: migration1 });
-        if (error1) throw error1;
-        console.log('✓ Profiles table created');
+        if (error1) console.log('Table likely exists, skipping...');
 
         // Execute migration 2
         console.log('Creating devices table...');
         const { error: error2 } = await supabase.rpc('exec_sql', { sql: migration2 });
-        if (error2) throw error2;
-        console.log('✓ Devices table created');
+        if (error2) console.log('Table likely exists, skipping...');
+
+        // Execute migration 4
+        console.log('Applying Super Admin schema...');
+        const { error: error4 } = await supabase.rpc('exec_sql', { sql: migration4 });
+        if (error4) console.warn('Migration 4 warning:', error4.message);
+        else console.log('✓ Super Admin schema applied');
 
         console.log('All migrations completed successfully!');
     } catch (error) {

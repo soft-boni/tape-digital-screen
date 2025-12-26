@@ -67,6 +67,62 @@ const getSupabase = () => {
   return createClient(url, key);
 };
 
+// --- Admin Helper ---
+async function verifyAdmin(c, supabase) {
+  const authHeader = c.req.header('Authorization');
+  if (!authHeader) return null;
+
+  const token = authHeader.replace('Bearer ', '');
+  const { data: { user }, error } = await supabase.auth.getUser(token);
+
+  if (error || !user) return null;
+
+  // Check role in profiles
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single();
+
+  if (profile?.role !== 'super_admin') return null;
+
+  return user;
+}
+
+// --- Plan Limits Helper ---
+const PLAN_LIMITS = {
+  'Free': { devices: 1, storage: 100 * 1024 * 1024 }, // 100MB
+  'Starter': { devices: 10, storage: 1 * 1024 * 1024 * 1024 }, // 1GB
+  'Business': { devices: 9999, storage: 10 * 1024 * 1024 * 1024 } // 10GB
+};
+
+async function checkPlanLimits(userId, supabase) {
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('plan, storage_used')
+    .eq('id', userId)
+    .single();
+
+  const plan = profile?.plan || 'Free';
+  const limits = PLAN_LIMITS[plan] || PLAN_LIMITS['Free'];
+
+  // Count devices
+  const { count: deviceCount } = await supabase
+    .from('devices')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .eq('activated', true);
+
+  return {
+    plan,
+    limits,
+    usage: {
+      devices: deviceCount || 0,
+      storage: profile?.storage_used || 0
+    }
+  };
+}
+
 // Helper to extract device name from User-Agent
 function extractDeviceName(userAgent: string): string {
   if (userAgent.includes('Android')) return 'Android Device';
@@ -108,27 +164,106 @@ async function ensureBucket(bucketName: string) {
 
 // --- Content Routes ---
 
-// List Content
+// List Content - Filtered by User
 app.get(`${BASE_PATH}/content`, async (c) => {
   try {
-    const keys = await kv.getByPrefix("content:");
-    // kv.getByPrefix returns array of values? No, instructions say "mget and getByPrefix return an array of values."
-    // Let's assume it returns the values directly.
-    return c.json(keys);
+    const authHeader = c.req.header('Authorization');
+    if (!authHeader) return c.json([], 200);
+
+    const supabase = getSupabase();
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user } } = await supabase.auth.getUser(token);
+
+    if (!user) return c.json([], 200);
+
+    // Fetch all content (limitation of KV store structure)
+    const allContent = await kv.getByPrefix("content:");
+
+    // Filter strictly by ownership
+    const userContent = allContent.filter(item => item.userId === user.id);
+
+    return c.json(userContent);
   } catch (e) {
     console.error(e);
     return c.json({ error: e.message }, 500);
   }
 });
 
-// Create Content Metadata
+// Create Content Metadata - With Ownership
 app.post(`${BASE_PATH}/content`, async (c) => {
   try {
+    const authHeader = c.req.header('Authorization');
+    if (!authHeader) return c.json({ error: 'Unauthorized' }, 401);
+
+    const supabase = getSupabase();
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user } } = await supabase.auth.getUser(token);
+
+    if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+    // Check storage limit
+    const { limits, usage } = await checkPlanLimits(user.id, supabase);
     const body = await c.req.json();
+    const fileSize = body.size || 0;
+
+    if (usage.storage + fileSize > limits.storage) {
+      return c.json({ error: `Storage limit exceeded for ${limits.plan} plan. Please upgrade.` }, 403);
+    }
+
+    // Update storage_used in profiles
+    await supabase.rpc('increment_storage_used', { user_id: user.id, bytes: fileSize });
+    // Note: increment_storage_used needs to be created or we manual update
+    // Manual update for now to avoid migration dependency if possible, but concurrency...
+    // Let's just do manual update for MVP
+    const { data: profile } = await supabase.from('profiles').select('storage_used').eq('id', user.id).single();
+    await supabase.from('profiles').update({ storage_used: (profile?.storage_used || 0) + fileSize }).eq('id', user.id);
+
     const id = crypto.randomUUID();
-    const newContent = { ...body, id, createdAt: new Date().toISOString() };
+    const newContent = {
+      ...body,
+      id,
+      userId: user.id, // Save ownership
+      createdAt: new Date().toISOString()
+    };
     await kv.set(`content:${id}`, newContent);
     return c.json(newContent);
+  } catch (e) {
+    console.error(e);
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// Claim Legacy Content (One-time migration for Main Account)
+app.post(`${BASE_PATH}/content/claim-legacy`, async (c) => {
+  try {
+    const authHeader = c.req.header('Authorization');
+    if (!authHeader) return c.json({ error: 'Unauthorized' }, 401);
+
+    const supabase = getSupabase();
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user } } = await supabase.auth.getUser(token);
+
+    if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+    console.log(`User ${user.id} claiming legacy content...`);
+
+    const allContent = await kv.getByPrefix("content:");
+    let claimedCount = 0;
+
+    for (const item of allContent) {
+      if (!item.userId) {
+        // Content has no owner - claim it!
+        const updated = { ...item, userId: user.id };
+        await kv.set(`content:${item.id}`, updated);
+        claimedCount++;
+      }
+    }
+
+    return c.json({
+      success: true,
+      message: `Claimed ${claimedCount} legacy items`,
+      claimedCount
+    });
   } catch (e) {
     console.error(e);
     return c.json({ error: e.message }, 500);
@@ -138,10 +273,25 @@ app.post(`${BASE_PATH}/content`, async (c) => {
 // Update Content (e.g., rename)
 app.put(`${BASE_PATH}/content/:id`, async (c) => {
   try {
+    const authHeader = c.req.header('Authorization');
+    if (!authHeader) return c.json({ error: 'Unauthorized' }, 401);
+
+    const supabase = getSupabase();
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user } } = await supabase.auth.getUser(token);
+
+    if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
     const id = c.req.param("id");
     const body = await c.req.json();
     const existing = await kv.get(`content:${id}`);
+
     if (!existing) return c.json({ error: "Content not found" }, 404);
+
+    // Strict ownership check
+    if (existing.userId && existing.userId !== user.id) {
+      return c.json({ error: "Unauthorized" }, 403);
+    }
 
     const updated = { ...existing, ...body };
     await kv.set(`content:${id}`, updated);
@@ -155,16 +305,42 @@ app.put(`${BASE_PATH}/content/:id`, async (c) => {
 // Delete Content
 app.delete(`${BASE_PATH}/content/:id`, async (c) => {
   try {
+    const authHeader = c.req.header('Authorization');
+    if (!authHeader) return c.json({ error: 'Unauthorized' }, 401);
+
+    const supabase = getSupabase();
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user } } = await supabase.auth.getUser(token);
+
+    if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
     const id = c.req.param("id");
     const content = await kv.get(`content:${id}`);
     if (!content) return c.json({ error: "Content not found" }, 404);
+
+    // Strict ownership check
+    if (content.userId && content.userId !== user.id) {
+      return c.json({ error: "Unauthorized" }, 403);
+    }
+
+    // Decrease storage used
+    const fileSize = content.size || 0;
+    const { data: profile } = await supabase.from('profiles').select('storage_used').eq('id', user.id).single();
+    if (profile) {
+      const newUsage = Math.max(0, (profile.storage_used || 0) - fileSize);
+      await supabase.from('profiles').update({ storage_used: newUsage }).eq('id', user.id);
+    }
 
     // Delete from KV store
     await kv.del(`content:${id}`);
 
     // Optional: Remove from programs that reference this content
+    // Note: Programs are also user-owned now, so this safe-ish.
     const programs = await kv.getByPrefix("program:");
     for (const program of programs) {
+      // If program belongs to same user (or we just clean up generally?)
+      // Let's safe clean up generally, or strictly?
+      // Safe to clean up references.
       if (program.content && program.content.some(c => c.id === id || c.contentId === id)) {
         const updatedContent = program.content.filter(c => c.id !== id && c.contentId !== id);
         await kv.set(`program:${program.id}`, { ...program, content: updatedContent });
@@ -246,33 +422,32 @@ app.get(`${BASE_PATH}/programs`, async (c) => {
   try {
     const supabase = getSupabase();
 
-    // Get auth token to filter by user
+    // Get auth token to filter by user - STRICT ENFORCEMENT
     const authHeader = c.req.header('Authorization');
-    let userId = null;
-
-    if (authHeader) {
-      try {
-        const token = authHeader.replace('Bearer ', '');
-        const { data: { user } } = await supabase.auth.getUser(token);
-        if (user) {
-          userId = user.id;
-        }
-      } catch (e) {
-        console.log('Could not get user info:', e);
-      }
+    if (!authHeader) {
+      return c.json([], 200); // Return empty list to unauthenticated users
     }
 
-    // Fetch programs from Supabase
-    const query = supabase
+    let userId = null;
+    try {
+      const token = authHeader.replace('Bearer ', '');
+      const { data: { user } } = await supabase.auth.getUser(token);
+      if (user) userId = user.id;
+    } catch (e) {
+      console.log('Could not get user info:', e);
+    }
+
+    // Require userId to see any programs
+    if (!userId) {
+      return c.json([], 200);
+    }
+
+    // Fetch programs from Supabase (filtered by user)
+    const { data: programs, error } = await supabase
       .from('programs')
       .select('*')
+      .eq('user_id', userId) // STRICT FILTER
       .order('created_at', { ascending: false });
-
-    if (userId) {
-      query.eq('user_id', userId);
-    }
-
-    const { data: programs, error } = await query;
 
     if (error) throw error;
 
@@ -831,6 +1006,23 @@ app.post(`${BASE_PATH}/devices/claim`, async (c) => {
     const { pin, name } = await c.req.json();
     const supabase = getSupabase();
 
+    // Get User Auth
+    const authHeader = c.req.header('Authorization');
+    let userId = null;
+    if (authHeader) {
+      const token = authHeader.replace('Bearer ', '');
+      const { data: { user } } = await supabase.auth.getUser(token);
+      userId = user?.id;
+    }
+
+    if (!userId) return c.json({ error: "Unauthorized" }, 401);
+
+    // Check device limit
+    const { limits, usage } = await checkPlanLimits(userId, supabase);
+    if (usage.devices >= limits.devices) {
+      return c.json({ error: `Device limit exceeded for ${limits.plan} plan. Please upgrade.` }, 403);
+    }
+
     // Find device by PIN
     const { data: device } = await supabase
       .from('devices')
@@ -850,7 +1042,8 @@ app.post(`${BASE_PATH}/devices/claim`, async (c) => {
         name,
         status: 'online',
         activated: true,
-        last_seen: new Date().toISOString()
+        last_seen: new Date().toISOString(),
+        user_id: userId // CRITICAL: Assign to user
       })
       .eq('id', device.id)
       .select()
@@ -1005,23 +1198,55 @@ app.delete(`${BASE_PATH}/devices/:id`, async (c) => {
 // Stats
 app.get(`${BASE_PATH}/dashboard/stats`, async (c) => {
   try {
-    const supabase = getSupabase();
-    const { count: programsCount } = await supabase.from('programs').select('*', { count: 'exact', head: true });
-    const { count: devicesCount } = await supabase.from('devices').select('*', { count: 'exact', head: true });
+    const authHeader = c.req.header('Authorization');
+    if (!authHeader) return c.json({
+      programsCount: 0,
+      devicesCount: 0,
+      onlineDevicesCount: 0,
+      contentCount: 0
+    });
 
-    // Online devices (based on status or last_seen - using status for now as it's updated on ping)
+    const supabase = getSupabase();
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user } } = await supabase.auth.getUser(token);
+
+    if (!user) return c.json({
+      programsCount: 0,
+      devicesCount: 0,
+      onlineDevicesCount: 0,
+      contentCount: 0
+    });
+
+    const userId = user.id;
+
+    // Filter Stats by User
+    const { count: programsCount } = await supabase
+      .from('programs')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId);
+
+    const { count: devicesCount } = await supabase
+      .from('devices')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('activated', true); // Only count activated devices for dashboard
+
+    // Online devices
     const { count: onlineDevicesCount } = await supabase
       .from('devices')
       .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('activated', true)
       .eq('status', 'online');
 
-    const content = await kv.getByPrefix("content:"); // Content still in KV for now
+    const content = await kv.getByPrefix("content:"); // Fetch all content
+    const userContentCount = content.filter(c => c.userId === userId).length;
 
     return c.json({
       programsCount: programsCount || 0,
       devicesCount: devicesCount || 0,
       onlineDevicesCount: onlineDevicesCount || 0,
-      contentCount: content.length,
+      contentCount: userContentCount,
     });
   } catch (e) {
     console.error(e);
@@ -1039,6 +1264,7 @@ app.get(`${BASE_PATH}/dashboard/stats`, async (c) => {
 // --- Profile Routes ---
 
 // Get User Profile
+// Get User Profile
 app.get(`${BASE_PATH}/profile`, async (c) => {
   try {
     const authHeader = c.req.header('Authorization');
@@ -1054,18 +1280,43 @@ app.get(`${BASE_PATH}/profile`, async (c) => {
       return c.json({ error: 'Unauthorized' }, 401);
     }
 
-    const profileKey = `profile:${user.id}`;
-    const profile = await kv.get(profileKey);
+    // Fetch from Supabase profiles table
+    const { data: profile, error: dbError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    if (dbError) throw dbError;
 
     if (!profile) {
+      // Fallback if profile row missing (should rarely happen due to trigger)
       return c.json({
+        id: user.id,
         name: user.email?.split('@')[0] || 'User',
         email: user.email || '',
-        avatarUrl: null
+        avatarUrl: null,
+        plan: 'Free',
+        role: 'user'
       });
     }
 
-    return c.json(profile);
+    // Map snake_case to camelCase for frontend consistency if needed, 
+    // or just return as is. Frontend interfaces use camelCase in some places 
+    // but the API usually returns JSON. 
+    // The previous KV store used camelCase (avatarUrl). 
+    // SQL uses snake_case (avatar_url).
+    // I should normalize this to match what the frontend expects.
+    // Looking at DashboardLayout.tsx: `profile.avatarUrl` vs `profile.avatar_url`.
+    // The previous `loadUserProfile` in DashboardLayout.tsx had: `avatarUrl: profile.avatarUrl || null`.
+    // So I should map it.
+
+    return c.json({
+      ...profile,
+      avatarUrl: profile.avatar_url, // map snake_case to camelCase
+      storageUsed: profile.storage_used,
+      // plan, role, name are likely same key
+    });
   } catch (e) {
     console.error(e);
     return c.json({ error: e.message }, 500);
@@ -1089,19 +1340,30 @@ app.put(`${BASE_PATH}/profile`, async (c) => {
     }
 
     const body = await c.req.json();
-    const profileKey = `profile:${user.id}`;
 
-    const existingProfile = await kv.get(profileKey) || {};
-    const updatedProfile = {
-      ...existingProfile,
-      name: body.name || existingProfile.name || user.email?.split('@')[0] || 'User',
-      email: user.email || '',
-      avatarUrl: body.avatarUrl !== undefined ? body.avatarUrl : existingProfile.avatarUrl,
-      updatedAt: new Date().toISOString()
+    // Whitelist allowed fields to update
+    const updates: any = {
+      updated_at: new Date().toISOString()
     };
 
-    await kv.set(profileKey, updatedProfile);
-    return c.json(updatedProfile);
+    if (body.name !== undefined) updates.name = body.name;
+    if (body.avatarUrl !== undefined) updates.avatar_url = body.avatarUrl;
+    // Do NOT allow updating role or plan here
+
+    const { data: updatedProfile, error: updateError } = await supabase
+      .from('profiles')
+      .update(updates)
+      .eq('id', user.id)
+      .select()
+      .single();
+
+    if (updateError) throw updateError;
+
+    return c.json({
+      ...updatedProfile,
+      avatarUrl: updatedProfile.avatar_url,
+      storageUsed: updatedProfile.storage_used
+    });
   } catch (e) {
     console.error(e);
     return c.json({ error: e.message }, 500);
@@ -1245,6 +1507,7 @@ async function trackDeviceStatus(device: any, previousStatus: string | null, use
 }
 
 // Update device status check to track notifications
+// Update device status check to track notifications
 // Modify the devices list endpoint to track status changes
 app.get(`${BASE_PATH}/devices`, async (c) => {
   try {
@@ -1262,20 +1525,20 @@ app.get(`${BASE_PATH}/devices`, async (c) => {
       }
     }
 
+    // STRICT AUTHENTICATION REQUIRED
+    if (!userId) {
+      return c.json([], 200);
+    }
+
     const supabase = getSupabase();
 
-    // Fetch devices from Supabase
-    let query = supabase
+    // Fetch devices from Supabase - STRICTLY FILTERED BY USER
+    const { data: devices, error } = await supabase
       .from('devices')
       .select('*')
-      .eq('activated', true); // Only show activated devices
-
-    // Filter by user if authenticated
-    // if (userId) {
-    //   query = query.eq('user_id', userId);
-    // }
-
-    const { data: devices, error } = await query.order('activated_at', { ascending: false });
+      .eq('user_id', userId) // STRICT FILTER
+      .eq('activated', true) // Only show activated devices
+      .order('activated_at', { ascending: false });
 
     if (error) throw error;
 
@@ -1298,6 +1561,333 @@ app.get(`${BASE_PATH}/devices`, async (c) => {
     return c.json({ error: e.message }, 500);
   }
 });
+
+// Claim Legacy Content (One-time migration for Main Account)
+// ... existing content claim ...
+
+// Claim Legacy Devices (One-time migration)
+app.post(`${BASE_PATH}/devices/claim-legacy`, async (c) => {
+  try {
+    const authHeader = c.req.header('Authorization');
+    if (!authHeader) return c.json({ error: 'Unauthorized' }, 401);
+
+    const supabase = getSupabase();
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user } } = await supabase.auth.getUser(token);
+
+    if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+    console.log(`User ${user.id} claiming legacy devices...`);
+
+    // Fetch all devices (admin level)
+    const { data: devices, error } = await supabase
+      .from('devices')
+      .select('*');
+
+    if (error) throw error;
+
+    let claimedCount = 0;
+    const updates = [];
+
+    for (const device of devices) {
+      if (!device.user_id && device.activated) {
+        updates.push(
+          supabase
+            .from('devices')
+            .update({ user_id: user.id })
+            .eq('id', device.id)
+        );
+        claimedCount++;
+      }
+    }
+
+    await Promise.all(updates);
+
+    return c.json({
+      success: true,
+      message: `Claimed ${claimedCount} legacy devices`,
+      claimedCount
+    });
+  } catch (e) {
+    console.error(e);
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// Claim Legacy Programs (One-time migration)
+app.post(`${BASE_PATH}/programs/claim-legacy`, async (c) => {
+  try {
+    const authHeader = c.req.header('Authorization');
+    if (!authHeader) return c.json({ error: 'Unauthorized' }, 401);
+
+    const supabase = getSupabase();
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user } } = await supabase.auth.getUser(token);
+
+    if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+    console.log(`User ${user.id} claiming legacy programs...`);
+
+    const { data: programs, error } = await supabase.from('programs').select('*');
+    if (error) throw error;
+
+    let claimedCount = 0;
+    const updates = [];
+
+    for (const program of programs) {
+      if (!program.user_id) {
+        updates.push(
+          supabase
+            .from('programs')
+            .update({ user_id: user.id })
+            .eq('id', program.id)
+        );
+        claimedCount++;
+      }
+    }
+
+    await Promise.all(updates);
+
+    return c.json({
+      success: true,
+      message: `Claimed ${claimedCount} legacy programs`,
+      claimedCount
+    });
+  } catch (e) {
+    console.error(e);
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+
+// --- ADMIN ROUTES ---
+
+// Admin Stats
+app.get(`${BASE_PATH}/admin/stats`, async (c) => {
+  try {
+    const supabase = getSupabase();
+    const admin = await verifyAdmin(c, supabase);
+    if (!admin) return c.json({ error: 'Unauthorized' }, 401);
+
+    // Count Users
+    const { count: userCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'user');
+
+    // Count Devices
+    const { count: deviceCount } = await supabase.from('devices').select('*', { count: 'exact', head: true });
+
+    // Storage Used (sum)
+    const { data: profiles } = await supabase.from('profiles').select('storage_used');
+    const totalStorage = profiles?.reduce((acc, p) => acc + (p.storage_used || 0), 0) || 0;
+
+    // Users by Plan
+    const { data: allProfiles } = await supabase.from('profiles').select('plan');
+    const byPlan = { Free: 0, Starter: 0, Business: 0 };
+    allProfiles?.forEach(p => {
+      if (byPlan[p.plan] !== undefined) byPlan[p.plan]++;
+    });
+
+    return c.json({
+      userCount: userCount || 0,
+      deviceCount: deviceCount || 0,
+      totalStorage,
+      byPlan
+    });
+  } catch (e) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// Admin Users List
+app.get(`${BASE_PATH}/admin/users`, async (c) => {
+  try {
+    const supabase = getSupabase();
+    const admin = await verifyAdmin(c, supabase);
+    if (!admin) return c.json({ error: 'Unauthorized' }, 401);
+
+    const { data: profiles, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    return c.json(profiles);
+  } catch (e) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// Admin Update User
+app.put(`${BASE_PATH}/admin/users/:id`, async (c) => {
+  try {
+    const supabase = getSupabase();
+    const admin = await verifyAdmin(c, supabase);
+    if (!admin) return c.json({ error: 'Unauthorized' }, 401);
+
+    const id = c.req.param('id');
+    const body = await c.req.json();
+
+    const updates: any = {};
+    if (body.plan) updates.plan = body.plan;
+    if (body.role) updates.role = body.role;
+    if (body.is_suspended !== undefined) updates.is_suspended = body.is_suspended;
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return c.json(data);
+  } catch (e) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// Admin Create User
+app.post(`${BASE_PATH}/admin/users`, async (c) => {
+  try {
+    const supabase = getSupabase();
+    const admin = await verifyAdmin(c, supabase);
+    if (!admin) return c.json({ error: 'Unauthorized' }, 401);
+
+    const body = await c.req.json();
+    const { email, password, role, plan, name } = body;
+
+    if (!email || !password) return c.json({ error: 'Email and password required' }, 400);
+
+    // 1. Create User in Auth
+    const { data: user, error: createError } = await supabase.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: { name }
+    });
+
+    if (createError) throw createError;
+
+    // 2. Update Profile (Trigger creates it, but we might want custom role/plan)
+    if (user.user && (role || plan)) {
+      await supabase.from('profiles').update({
+        role: role || 'user',
+        plan: plan || 'Free'
+      }).eq('id', user.user.id);
+    }
+
+    return c.json(user.user);
+  } catch (e) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// Admin Delete User
+app.delete(`${BASE_PATH}/admin/users/:id`, async (c) => {
+  try {
+    const supabase = getSupabase();
+    const admin = await verifyAdmin(c, supabase);
+    if (!admin) return c.json({ error: 'Unauthorized' }, 401);
+
+    const id = c.req.param('id');
+    const { data: targetProfile } = await supabase.from('profiles').select('role').eq('id', id).single();
+
+    if (targetProfile?.role === 'super_admin') {
+      return c.json({ error: 'Cannot delete a Super Admin. Please demote them first.' }, 403);
+    }
+
+    // Delete from Auth (requires service role, which we have)
+    const { error: authError } = await supabase.auth.admin.deleteUser(id);
+    if (authError) throw authError;
+
+    // Trigger should clean up profile, but we can ensure
+    await supabase.from('profiles').delete().eq('id', id);
+
+    return c.json({ success: true });
+  } catch (e) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// Admin Change User Password
+app.put(`${BASE_PATH}/admin/users/:id/password`, async (c) => {
+  try {
+    const supabase = getSupabase();
+    const admin = await verifyAdmin(c, supabase);
+    if (!admin) return c.json({ error: 'Unauthorized' }, 401);
+
+    const id = c.req.param('id');
+    const { password } = await c.req.json();
+
+    if (!password || password.length < 6) {
+      return c.json({ error: 'Password must be at least 6 characters' }, 400);
+    }
+
+    const { error } = await supabase.auth.admin.updateUserById(id, { password });
+    if (error) throw error;
+
+    return c.json({ success: true });
+  } catch (e) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// Cleanup Expired Trials (Scheduled / Admin)
+app.post(`${BASE_PATH}/admin/cleanup-trials`, async (c) => {
+  try {
+    const supabase = getSupabase();
+    // If triggered by Cron, we might check an API Key header or Service Role 
+    // For now, let's require Admin Auth OR a shared secret "X-Cron-Secret"
+
+    let authorized = false;
+    const authHeader = c.req.header('Authorization');
+    if (authHeader) {
+      const token = authHeader.replace('Bearer ', '');
+      const { data: { user } } = await supabase.auth.getUser(token);
+      if (user) {
+        const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+        if (profile?.role === 'super_admin') authorized = true;
+      }
+    }
+
+    // allow a secret for CRON
+    const secret = c.req.header('X-Cron-Secret');
+    if (secret && secret === Deno.env.get('CRON_SECRET')) authorized = true;
+
+    if (!authorized) return c.json({ error: 'Unauthorized' }, 401);
+
+    // Find expired free users
+    // Definition: Plan='Free' AND created_at < 48 hours ago
+    const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+
+    const { data: expiredUsers, error } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('plan', 'Free')
+      .lt('created_at', twoDaysAgo);
+
+    if (error) throw error;
+
+    console.log(`Found ${expiredUsers?.length || 0} expired trial users.`);
+    let deletedCount = 0;
+
+    // Delete them
+    for (const u of expiredUsers || []) {
+      const { error: delError } = await supabase.auth.admin.deleteUser(u.id);
+      if (!delError) {
+        await supabase.from('profiles').delete().eq('id', u.id); // Ensure profile gone
+        deletedCount++;
+      } else {
+        console.error(`Failed to delete user ${u.id}:`, delError);
+      }
+    }
+
+    return c.json({ success: true, deleted: deletedCount, totalFound: expiredUsers?.length });
+  } catch (e) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
 
 // Add catch-all route for debugging 404s
 app.all("*", async (c) => {

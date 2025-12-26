@@ -1,12 +1,12 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "../App";
-import { apiFetch } from "../utils/api";
-import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
-import { Label } from "../components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
-import { Avatar, AvatarFallback, AvatarImage } from "../components/ui/avatar";
+import { supabase } from "@/App";
+import { apiFetch } from "@/shared/utils/api";
+import { Button } from "@/shared/components/ui/button";
+import { Input } from "@/shared/components/ui/input";
+import { Label } from "@/shared/components/ui/label";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/components/ui/card";
+import { Avatar, AvatarFallback, AvatarImage } from "@/shared/components/ui/avatar";
 import { toast } from "sonner";
 import { ArrowLeft, Upload, User } from "lucide-react";
 
@@ -19,11 +19,7 @@ export function EditProfile() {
     email: "",
     avatarUrl: null as string | null,
   });
-  const [password, setPassword] = useState({
-    current: "",
-    new: "",
-    confirm: "",
-  });
+
 
   useEffect(() => {
     loadProfile();
@@ -150,35 +146,7 @@ export function EditProfile() {
     }
   };
 
-  const handleUpdatePassword = async (e: React.FormEvent) => {
-    e.preventDefault();
 
-    if (password.new !== password.confirm) {
-      toast.error("New passwords do not match");
-      return;
-    }
-
-    if (password.new.length < 6) {
-      toast.error("Password must be at least 6 characters");
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const { error } = await supabase.auth.updateUser({
-        password: password.new,
-      });
-
-      if (error) throw error;
-
-      toast.success("Password updated successfully");
-      setPassword({ current: "", new: "", confirm: "" });
-    } catch (error: any) {
-      toast.error(error.message || "Failed to update password");
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const getInitials = (name: string) => {
     return name
@@ -284,43 +252,7 @@ export function EditProfile() {
         </Card>
 
         {/* Change Password */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Change Password</CardTitle>
-            <CardDescription>Update your account password</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleUpdatePassword} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="new-password">New Password</Label>
-                <Input
-                  id="new-password"
-                  type="password"
-                  value={password.new}
-                  onChange={(e) => setPassword({ ...password, new: e.target.value })}
-                  placeholder="Enter new password"
-                  required
-                />
-              </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="confirm-password">Confirm New Password</Label>
-                <Input
-                  id="confirm-password"
-                  type="password"
-                  value={password.confirm}
-                  onChange={(e) => setPassword({ ...password, confirm: e.target.value })}
-                  placeholder="Confirm new password"
-                  required
-                />
-              </div>
-
-              <Button type="submit" disabled={loading} className="w-full">
-                {loading ? "Updating..." : "Update Password"}
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
       </div>
     </div>
   );

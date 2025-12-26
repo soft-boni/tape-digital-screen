@@ -2,17 +2,22 @@
 import { createClient } from "@supabase/supabase-js";
 import { BrowserRouter, Route, Routes, Navigate, Outlet, useLocation } from "react-router-dom";
 import { Toaster } from "sonner";
-import { projectId, publicAnonKey } from "../../utils/supabase/info";
-import { DashboardLayout } from "./components/layout/DashboardLayout";
-import { LoginPage } from "./pages/Auth";
-import { Dashboard } from "./pages/Dashboard";
-import { Screens } from "./pages/Prgrams";
-import { ScreenEditor } from "./pages/ProgramEditor";
-import { Devices } from "./pages/Devices";
-import { Content } from "./pages/Content";
-import { Player } from "./pages/Player";
-import { EditProfile } from "./pages/EditProfile";
-import { Settings } from "./pages/Settings";
+import { projectId, publicAnonKey } from "@/shared/utils/supabase/info";
+import { DashboardLayout } from "@/shared/components/layout/DashboardLayout";
+import { LoginPage } from "@/user-portal/pages/Auth";
+import { Dashboard } from "@/user-portal/pages/Dashboard";
+import { Screens } from "@/user-portal/pages/Prgrams";
+import { ScreenEditor } from "@/user-portal/pages/ProgramEditor";
+import { Devices } from "@/user-portal/pages/Devices";
+import { Content } from "@/user-portal/pages/Content";
+import { Player } from "@/user-portal/pages/Player";
+import { EditProfile } from "@/user-portal/pages/EditProfile";
+import { Settings } from "@/user-portal/pages/Settings";
+import { AdminLayout } from "@/admin-portal/layout/AdminLayout";
+import { AdminAuth } from "@/admin-portal/pages/AdminAuth";
+import { AdminDashboard } from "@/admin-portal/pages/AdminDashboard";
+import { AdminUsers } from "@/admin-portal/pages/AdminUsers";
+import { AdminSettings } from "@/admin-portal/pages/AdminSettings";
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -74,6 +79,16 @@ export default function App() {
             <Route path="/settings" element={<Settings />} />
           </Route>
         </Route>
+
+        {/* Admin Routes */}
+        <Route path="/admin/login" element={<AdminAuth />} />
+        <Route path="/admin" element={<AdminLayout />}>
+          <Route index element={<AdminDashboard />} />
+          <Route path="users" element={<AdminUsers />} />
+          <Route path="settings" element={<AdminSettings />} />
+        </Route>
+
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <Toaster position="bottom-right" />
     </BrowserRouter>

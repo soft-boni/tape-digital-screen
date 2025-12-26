@@ -1,27 +1,27 @@
 
 import { useEffect, useState, useRef } from "react";
-import { apiFetch } from "../utils/api";
-import { Button } from "../components/ui/button";
-import { Card, CardContent } from "../components/ui/card";
-import { Input } from "../components/ui/input";
+import { apiFetch } from "@/shared/utils/api";
+import { Button } from "@/shared/components/ui/button";
+import { Card, CardContent } from "@/shared/components/ui/card";
+import { Input } from "@/shared/components/ui/input";
 import { Search, Upload, FileImage, FileVideo, Trash2, Monitor, MoreVertical, X as XIcon, Music } from "lucide-react";
 import { toast } from "sonner";
-import { cn } from "../components/ui/utils";
+import { cn } from "@/shared/components/ui/utils";
 import { formatDistanceToNow } from "date-fns";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "../components/ui/dropdown-menu";
+} from "@/shared/components/ui/dropdown-menu";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogFooter
-} from "../components/ui/dialog";
-import { Label } from "../components/ui/label";
+} from "@/shared/components/ui/dialog";
+import { Label } from "@/shared/components/ui/label";
 import { Eye } from "lucide-react";
 
 interface ContentItem {
@@ -91,6 +91,8 @@ export function Content() {
     }
   };
 
+
+
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -105,40 +107,64 @@ export function Content() {
     }
 
     setUploading(true);
-    const toastId = toast.loading("Uploading to Cloudinary...");
+    const toastId = toast.loading("Preparing upload...");
 
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("upload_preset", "digital_signage_unsigned");
+      // 1. Get Signed Upload URL
+      const signRes = await apiFetch("/storage/sign", {
+        method: "POST",
+        body: JSON.stringify({
+          fileName: file.name,
+          fileType: file.type
+        })
+      });
 
-      const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
-      // Audio is treated as 'video' resource type in Cloudinary for most cases, 
-      // or 'auto' to be safe. 'video' supports duration etc.
-      const resourceType = isImage ? "image" : "video";
+      if (signRes.error) throw new Error(signRes.error);
 
-      const uploadResponse = await fetch(
-        `https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`,
-        {
-          method: "POST",
-          body: formData,
-        }
-      );
+      const { uploadUrl, path, token } = signRes;
 
-      if (!uploadResponse.ok) {
-        const error = await uploadResponse.json();
-        throw new Error(error.error?.message || "Cloudinary upload failed");
+      // 2. Upload File to Supabase Storage
+      toast.loading("Uploading...", { id: toastId });
+
+      const uploadHeaders: HeadersInit = {
+        "Content-Type": file.type,
+      };
+
+      if (token) {
+        uploadHeaders["Authorization"] = `Bearer ${token}`;
       }
 
-      const cloudinaryData = await uploadResponse.json();
+      const uploadRes = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: uploadHeaders,
+        body: file
+      });
+
+      if (!uploadRes.ok) {
+        console.error("Storage upload failed", uploadRes.status, await uploadRes.text());
+        throw new Error("Failed to upload file to storage");
+      }
+
+      // 3. Get Public/Read URL
+      // Since we just uploaded it, we can generate a signed read URL
+      const readUrlRes = await apiFetch("/storage/read-url", {
+        method: "POST",
+        body: JSON.stringify({ path })
+      });
+
+      if (readUrlRes.error) throw new Error(readUrlRes.error);
+      const readUrl = readUrlRes.readUrl;
+
+      // 4. Save Metadata
+      toast.loading("Finalizing...", { id: toastId });
 
       await apiFetch("/content", {
         method: "POST",
         body: JSON.stringify({
           name: file.name,
           type: isImage ? "image" : isVideo ? "video" : "audio",
-          readUrl: cloudinaryData.secure_url,
-          path: cloudinaryData.public_id,
+          readUrl: readUrl, // Signed URL (valid for 1 year)
+          path: path,
           size: file.size,
         }),
       });
@@ -309,6 +335,7 @@ export function Content() {
           <p className="text-sm text-muted-foreground mt-1">Upload, create and manage your content</p>
         </div>
         <div className="flex gap-2 w-full sm:w-auto">
+
           <div className="relative flex-1 sm:w-64">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input

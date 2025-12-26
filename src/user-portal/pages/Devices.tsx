@@ -1,7 +1,7 @@
 
 import { useEffect, useState } from "react";
-import { apiFetch } from "../utils/api";
-import { Button } from "../components/ui/button";
+import { apiFetch } from "@/shared/utils/api";
+import { Button } from "@/shared/components/ui/button";
 import {
   Table,
   TableBody,
@@ -9,7 +9,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "../components/ui/table";
+} from "@/shared/components/ui/table";
 import {
   Dialog,
   DialogContent,
@@ -18,10 +18,10 @@ import {
   DialogTitle,
   DialogTrigger,
   DialogFooter,
-} from "../components/ui/dialog";
-import { Input } from "../components/ui/input";
-import { Label } from "../components/ui/label";
-import { Badge } from "../components/ui/badge";
+} from "@/shared/components/ui/dialog";
+import { Input } from "@/shared/components/ui/input";
+import { Label } from "@/shared/components/ui/label";
+import { Badge } from "@/shared/components/ui/badge";
 import { Plus, Trash2, Edit2, MonitorOff, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
@@ -119,6 +119,7 @@ export function Devices() {
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold tracking-tight">Devices</h1>
         <div className="flex gap-2">
+
           <Button variant="outline" size="icon" onClick={loadData}>
             <RefreshCw className="h-4 w-4" />
           </Button>
