@@ -1,7 +1,7 @@
 
 import { useEffect, useState } from "react";
 import { BrowserRouter, Route, Routes, Navigate, Outlet, useLocation } from "react-router-dom";
-// import { Toaster } from "sonner";
+import { Toaster } from "sonner";
 import { motion, AnimatePresence } from "motion/react";
 
 import { supabase } from "@/shared/utils/supabase/client";
@@ -87,7 +87,7 @@ export default function App() {
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-      {/* <Toaster position="bottom-right" /> */}
+      <Toaster position="bottom-right" />
     </BrowserRouter>
   );
 }

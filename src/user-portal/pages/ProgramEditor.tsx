@@ -1,6 +1,6 @@
 ﻿
 import { useEffect, useState, useRef, useCallback } from "react";
-import { useParams } from "react-router-dom";
+// import { useParams } from "react-router-dom"; // Removed duplicate
 import { DndProvider, useDrag, useDrop } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import { apiFetch } from "@/shared/utils/api";
@@ -405,9 +405,16 @@ const AudioPicker = ({ open, onOpenChange, onSelect, allContent }: any) => {
 
 
 // --- Main Editor Component ---
+import { useNavigate, useParams } from "react-router-dom";
+// ... imports
+
+// ... inside ScreenEditor component
 export function ScreenEditor() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [screen, setScreen] = useState<any>(null);
+  const [saving, setSaving] = useState(false);
+  // ... other states
   const [allContent, setAllContent] = useState<any[]>([]);
   const [allDevices, setAllDevices] = useState<any[]>([]);
   const [assignedDevices, setAssignedDevices] = useState<any[]>([]);
@@ -462,6 +469,7 @@ export function ScreenEditor() {
   };
 
   const saveChanges = async () => {
+    setSaving(true);
     try {
       const updatedScreen = {
         ...screen,
@@ -469,11 +477,10 @@ export function ScreenEditor() {
         backgroundMusic,
         backgroundMusicName,
         background_music: backgroundMusic,
-        transition: globalTransition, // Saving global transition
+        transition: globalTransition,
         transitionDuration,
       };
 
-      // Ensure we explicitly send these fields even if not in original type (backend needs to support or ignore)
       await apiFetch(`/programs/${id}`, {
         method: "PUT",
         body: JSON.stringify(updatedScreen),
@@ -482,6 +489,8 @@ export function ScreenEditor() {
       toast.success("Changes saved!");
     } catch (error) {
       toast.error("Failed to save changes");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -492,7 +501,7 @@ export function ScreenEditor() {
     try {
       await apiFetch(`/programs/${screen.id}`, { method: "DELETE" });
       toast.success("Program deleted");
-      window.location.href = "/programs";
+      navigate("/programs");
     } catch (error) {
       toast.error("Failed to delete screen");
     }
@@ -611,7 +620,7 @@ export function ScreenEditor() {
         <div className="flex items-center justify-between pb-4 border-b bg-white/50 backdrop-blur-sm sticky top-0 z-10 p-2">
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Button variant="ghost" size="icon" onClick={() => window.location.href = "/programs"} className="mr-2">
+              <Button variant="ghost" size="icon" onClick={() => navigate("/programs")} className="mr-2">
                 <ChevronLeft className="w-6 h-6" />
               </Button>
               <Monitor className="w-6 h-6 text-blue-600" />
@@ -620,9 +629,18 @@ export function ScreenEditor() {
             <p className="text-sm text-muted-foreground ml-12">ID: {screen.id}</p>
           </div>
           <div className="flex gap-2">
-            <Button onClick={saveChanges} className="bg-blue-600 hover:bg-blue-700">
-              <Save className="w-4 h-4 mr-2" />
-              Save Changes
+            <Button onClick={saveChanges} disabled={saving} className="bg-blue-600 hover:bg-blue-700 min-w-[140px]">
+              {saving ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Save className="w-4 h-4 mr-2" />
+                  Save Changes
+                </>
+              )}
             </Button>
           </div>
         </div>
