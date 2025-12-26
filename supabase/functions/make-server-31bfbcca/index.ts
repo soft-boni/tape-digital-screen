@@ -572,16 +572,19 @@ app.get(`${BASE_PATH}/player/status`, async (c) => {
     let content = [];
     let backgroundMusic = null;
     let programSettings = {};
+    let program = null;
 
     const programId = device.program_id || device.screen_id; // Support both
 
     if (device.activated && programId) {
       // Fetch program from Supabase instead of KV store
-      const { data: program, error: programError } = await supabase
+      const { data: fetchedProgram, error: programError } = await supabase
         .from('programs')
         .select('*')
         .eq('id', programId)
         .maybeSingle();
+
+      program = fetchedProgram;
 
       if (programError) {
         console.error('Error fetching program:', programError);
@@ -637,16 +640,36 @@ app.get(`${BASE_PATH}/player/status`, async (c) => {
     let accountName = 'User';
     let accountAvatar = null;
 
-    if (device.user_id) {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('name, avatar_url')
-        .eq('id', device.user_id)
-        .maybeSingle();
+    // Resolve owner ID (check device first, then fall back to program owner)
+    let ownerId = device.user_id;
+    if (!ownerId && program && program.user_id) {
+      ownerId = program.user_id;
+    }
 
-      if (profile) {
-        accountName = profile.name || 'User';
-        accountAvatar = profile.avatar_url || null;
+    if (ownerId) {
+      // Try to get profile from KV first (primary source of truth for admin panel)
+      try {
+        const profileKey = `profile:${ownerId}`;
+        const profile = await kv.get(profileKey);
+
+        if (profile) {
+          accountName = profile.name || accountName;
+          accountAvatar = profile.avatarUrl || accountAvatar;
+        } else {
+          // Fallback to Supabase profiles table if not in KV
+          const { data: dbProfile } = await supabase
+            .from('profiles')
+            .select('name, avatar_url')
+            .eq('id', ownerId)
+            .maybeSingle();
+
+          if (dbProfile) {
+            accountName = dbProfile.name || accountName;
+            accountAvatar = dbProfile.avatar_url || accountAvatar;
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to fetch profile from KV:', err);
       }
     }
 
