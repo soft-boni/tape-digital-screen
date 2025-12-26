@@ -1,0 +1,49 @@
+name: tape_tv_player
+description: Tape Digital Signage TV Player - Offline content playback for Android TV
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State Management
+  provider: ^6.1.1
+  
+  # Networking
+  dio: ^5.4.0
+  
+  # Local Storage
+  sqflite: ^2.3.0
+  shared_preferences: ^2.2.2
+  path_provider: ^2.1.1
+  path: ^1.8.3
+  
+  # Video Playback
+  video_player: ^2.8.1
+  chewie: ^1.7.4  # Video player UI wrapper
+  
+  # Audio Playback
+  audioplayers: ^5.2.1
+  
+  # QR Code
+  qr_flutter: ^4.1.0
+  
+  # File Download
+  flutter_downloader: ^1.11.5
+  permission_handler: ^11.1.0
+  
+  # UI
+  cached_network_image: ^3.3.1
+  google_fonts: ^6.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
