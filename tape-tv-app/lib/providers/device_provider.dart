@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -48,11 +49,17 @@ class DeviceProvider extends ChangeNotifier {
       );
 
       if (isActivated) {
-        print('🎉 Device already activated! Going to connected screen...');
+        print(
+            '🎉 Device already activated! Loading cache and checking for updates...');
+
+        // Load cache immediately so we have content to show/play while checking online
+        await _loadCachedStatus();
+
         _viewState = ViewState.connected;
         notifyListeners();
-        // Check for latest content
-        await _checkActivationStatus();
+
+        // Check for latest content in background
+        _checkActivationStatus();
       } else {
         print('⏳ Not activated yet, showing PIN screen...');
         _viewState = ViewState.notConnected;
@@ -138,10 +145,16 @@ class DeviceProvider extends ChangeNotifier {
       if (status.activated) {
         print('✅ Device is ACTIVATED! Saving state and transitioning...');
 
-        // CRITICAL: Save activation state to persist across restarts
+        // CRITICAL: Save activation state and Playlist Manifest to persist across restarts
         final prefs = await SharedPreferences.getInstance();
         await prefs.setBool(Constants.prefsDeviceActivated, true);
-        print('💾 Activation state saved to SharedPreferences');
+
+        // Save the full status object (including content list)
+        await prefs.setString(
+            Constants.prefsPlayerStatus, jsonEncode(status.toJson()));
+
+        print(
+            '💾 Activation state and Playlist Manifest saved to SharedPreferences');
 
         _pollTimer?.cancel();
         _viewState = ViewState.connected;
@@ -151,7 +164,43 @@ class DeviceProvider extends ChangeNotifier {
       }
     } catch (e) {
       print('❌ Activation check failed: $e');
-      _error = e.toString();
+
+      // If we are already activated, try to load from cache
+      if (_device != null && _device!.activated && _status == null) {
+        print('⚠️ Trying to load cached PlayerStatus due to network error...');
+        await _loadCachedStatus();
+      } else {
+        _error = e.toString();
+        notifyListeners();
+      }
+    }
+  }
+
+  /// Load cached PlayerStatus from SharedPreferences
+  Future<void> _loadCachedStatus() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonStr = prefs.getString(Constants.prefsPlayerStatus);
+
+      if (jsonStr != null) {
+        final Map<String, dynamic> jsonMap = jsonDecode(jsonStr);
+        _status = PlayerStatus.fromJson(jsonMap);
+        print(
+            '📦 Loaded cached PlayerStatus with ${_status!.content.length} items');
+
+        if (_viewState != ViewState.playing &&
+            _viewState != ViewState.settings) {
+          _viewState = ViewState.connected;
+        }
+        notifyListeners();
+      } else {
+        print('⚠️ No cached PlayerStatus found.');
+        _error = 'Offline and no content cached.';
+        notifyListeners();
+      }
+    } catch (e) {
+      print('❌ Failed to load cached status: $e');
+      _error = 'Failed to load offline content.';
       notifyListeners();
     }
   }

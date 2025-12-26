@@ -169,6 +169,19 @@ class PlayerStatus {
       backgroundMusic: json['backgroundMusic'],
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'activated': activated,
+      'deleted': deleted,
+      'screenId': screenId,
+      'content': content.map((e) => e.toJson()).toList(),
+      'accountName': accountName,
+      'accountAvatar': accountAvatar,
+      'deviceName': deviceName,
+      'backgroundMusic': backgroundMusic,
+    };
+  }
 }
 
 enum ViewState {

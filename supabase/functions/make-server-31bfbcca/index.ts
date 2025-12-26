@@ -57,10 +57,14 @@ app.use("*", async (c, next) => {
 
 // Helper to get Supabase Client
 const getSupabase = () => {
-  return createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-  );
+  const url = Deno.env.get("SUPABASE_URL") ?? Deno.env.get("MY_SUPABASE_URL");
+  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? Deno.env.get("MY_SERVICE_ROLE_KEY");
+
+  if (!url || !key) {
+    throw new Error(`CRITICAL: Missing env vars. URL: ${!!url}, KEY: ${!!key}. Please set MY_SUPABASE_URL and MY_SERVICE_ROLE_KEY secrets.`);
+  }
+
+  return createClient(url, key);
 };
 
 // Helper to extract device name from User-Agent

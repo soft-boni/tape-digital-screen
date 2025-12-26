@@ -28,6 +28,7 @@ class Constants {
   static const String prefsDeviceId = 'device_id';
   static const String prefsDevicePin = 'device_pin';
   static const String prefsDeviceActivated = 'device_activated';
+  static const String prefsPlayerStatus = 'player_status';
 
   // Playback
   static const int defaultContentDuration = 10; // seconds
