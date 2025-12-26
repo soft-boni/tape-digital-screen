@@ -645,10 +645,11 @@ export function ScreenEditor() {
           </div>
         </div>
 
-        <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-6 min-h-0">
+        <div className="flex-1 flex flex-col lg:flex-row gap-6 min-h-0">
 
           {/* Left: Editor & Settings */}
-          <Card className="flex flex-col min-h-0 border-0 shadow-none bg-transparent">
+          {/* Order 2 on mobile (bottom), Order 1 on desktop (left) */}
+          <Card className="flex flex-col min-h-0 border-0 shadow-none bg-transparent w-full lg:w-1/2 order-2 lg:order-1">
             <Tabs defaultValue="timeline" className="flex-1 flex flex-col min-h-0">
               <div className="flex items-center justify-between mb-4">
                 <TabsList className="bg-slate-100">
@@ -827,7 +828,8 @@ export function ScreenEditor() {
           </Card>
 
           {/* Right: Live Preview */}
-          <div className="flex flex-col gap-4">
+          {/* Order 1 on mobile (top), Order 2 on desktop (right) */}
+          <div className="flex flex-col gap-4 w-full lg:w-1/2 order-1 lg:order-2">
             <div className="flex items-center justify-between">
               <h3 className="font-semibold flex items-center gap-2">
                 <Play className="w-4 h-4 text-green-600" /> Live Preview
