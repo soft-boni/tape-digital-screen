@@ -4,7 +4,7 @@ import { LayoutDashboard, Users, LogOut, Settings as SettingsIcon } from "lucide
 import { TapeLogo } from "@/shared/components/TapeLogo";
 import { cn } from "@/shared/components/ui/utils";
 import { Button } from "@/shared/components/ui/button";
-import { supabase } from "@/App";
+import { supabase } from "@/shared/utils/supabase/client";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { apiFetch } from "@/shared/utils/api";

@@ -1,5 +1,5 @@
 
-import { supabase } from "@/App";
+import { supabase } from "@/shared/utils/supabase/client";
 import { projectId } from "@/shared/utils/supabase/info";
 
 const BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-31bfbcca`;
