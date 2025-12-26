@@ -4,7 +4,7 @@ import { apiFetch } from "../utils/api";
 import { Button } from "../components/ui/button";
 import { Card, CardContent } from "../components/ui/card";
 import { Input } from "../components/ui/input";
-import { Search, Upload, FileImage, FileVideo, Trash2, Monitor, MoreVertical, X as XIcon } from "lucide-react";
+import { Search, Upload, FileImage, FileVideo, Trash2, Monitor, MoreVertical, X as XIcon, Music } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "../components/ui/utils";
 import { formatDistanceToNow } from "date-fns";
@@ -14,11 +14,20 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "../components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter
+} from "../components/ui/dialog";
+import { Label } from "../components/ui/label";
+import { Eye } from "lucide-react";
 
 interface ContentItem {
   id: string;
   name: string;
-  type: "image" | "video";
+  type: "image" | "video" | "audio";
   readUrl: string;
   createdAt: string;
   path?: string;
@@ -88,9 +97,10 @@ export function Content() {
 
     const isImage = file.type.startsWith("image/");
     const isVideo = file.type.startsWith("video/");
+    const isAudio = file.type.startsWith("audio/");
 
-    if (!isImage && !isVideo) {
-      toast.error("Please select an image or video file");
+    if (!isImage && !isVideo && !isAudio) {
+      toast.error("Please select an image, video, or audio file");
       return;
     }
 
@@ -103,6 +113,8 @@ export function Content() {
       formData.append("upload_preset", "digital_signage_unsigned");
 
       const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
+      // Audio is treated as 'video' resource type in Cloudinary for most cases, 
+      // or 'auto' to be safe. 'video' supports duration etc.
       const resourceType = isImage ? "image" : "video";
 
       const uploadResponse = await fetch(
@@ -124,7 +136,7 @@ export function Content() {
         method: "POST",
         body: JSON.stringify({
           name: file.name,
-          type: isImage ? "image" : "video",
+          type: isImage ? "image" : isVideo ? "video" : "audio",
           readUrl: cloudinaryData.secure_url,
           path: cloudinaryData.public_id,
           size: file.size,
@@ -191,14 +203,30 @@ export function Content() {
       const existingContent = screen.content || [];
       const selectedContent = content.filter(item => selectedIds.has(item.id));
 
+      // Filter out audio for playlist assignment if needed? 
+      // For now, let's allow it but maybe warn? 
+      // Actually, let's filter audio out of visual playlists for now to avoid confusion
+      const visualContent = selectedContent.filter(c => c.type !== 'audio');
+
+      if (visualContent.length !== selectedContent.length) {
+        toast.message("Audio files skipped", {
+          description: "Audio files cannot be added to the visual timeline directly. Use Program Settings > Background Music."
+        });
+      }
+
+      if (visualContent.length === 0) {
+        toast.dismiss(toastId);
+        return;
+      }
+
       await apiFetch(`/programs/${selectedScreenId}`, {
         method: "PUT",
         body: JSON.stringify({
-          content: [...existingContent, ...selectedContent]
+          content: [...existingContent, ...visualContent]
         })
       });
 
-      toast.success("Content assigned successfully", { id: toastId });
+      toast.success(`Assigned ${visualContent.length} items successfully`, { id: toastId });
       setAssignModalOpen(false);
       setSelectedIds(new Set());
       loadScreens();
@@ -298,176 +326,157 @@ export function Content() {
             type="file"
             ref={fileInputRef}
             className="hidden"
-            accept="image/*,video/*"
+            accept="image/*,video/*,audio/*"
             onChange={handleFileSelect}
           />
         </div>
       </div>
 
-      {/* Selection Toolbar */}
-      {selectedIds.size > 0 && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground rounded-lg shadow-lg px-6 py-3 flex items-center gap-4 z-50">
-          <span className="font-medium">{selectedIds.size} item(s) selected</span>
-          <Button size="sm" variant="secondary" onClick={() => setAssignModalOpen(true)}>
-            <Monitor className="w-4 h-4 mr-2" />
-            Assign
-          </Button>
-          <Button size="sm" variant="destructive" onClick={bulkDelete}>
-            <Trash2 className="w-4 h-4 mr-2" />
-            Delete
-          </Button>
-          <button
-            className="ml-2 text-primary-foreground hover:text-primary-foreground/80"
-            onClick={clearSelection}
-          >
-            <XIcon className="w-4 h-4" />
-          </button>
-        </div>
-      )}
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <span>{selectedIds.size} selected</span>
+        {selectedIds.size > 0 && (
+          <>
+            <Button variant="ghost" size="sm" onClick={clearSelection} className="h-auto p-1 px-2">Clear</Button>
+            <div className="h-4 w-px bg-border" />
+            <Button variant="ghost" size="sm" onClick={() => setAssignModalOpen(true)} className="h-auto p-1 px-2 text-indigo-600">Assign to Program</Button>
+            <Button variant="ghost" size="sm" onClick={bulkDelete} className="h-auto p-1 px-2 text-red-600">Delete</Button>
+          </>
+        )}
+      </div>
 
-      {loading ? (
-        <div>Loading content...</div>
-      ) : (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-          {filteredContent.map((item) => {
-            const assignedScreens = getAssignedScreens(item.id);
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+        {filteredContent.map((item) => {
+          const isSelected = selectedIds.has(item.id);
+          const assignedTo = getAssignedScreens(item.id);
 
-            return (
-              <Card key={item.id} className={cn(
-                "overflow-visible group transition-all relative",
-                selectedIds.has(item.id) && "ring-2 ring-primary"
-              )}>
-                <div
-                  className="aspect-[4/3] bg-slate-100 relative overflow-hidden cursor-pointer"
-                  onClick={() => setPreviewItem(item)}
-                >
-                  {/* Checkbox - only way to select */}
-                  <div className="absolute top-2 left-2 z-10" onClick={(e) => toggleSelection(item.id, e)}>
-                    <div className={cn(
-                      "w-5 h-5 rounded border-2 flex items-center justify-center transition-colors cursor-pointer",
-                      selectedIds.has(item.id)
-                        ? "bg-primary border-primary"
-                        : "bg-white/90 border-gray-300 hover:border-primary"
-                    )}>
-                      {selectedIds.has(item.id) && (
-                        <svg className="w-3 h-3 text-white" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
-                          <path d="M5 13l4 4L19 7"></path>
-                        </svg>
-                      )}
-                    </div>
+          return (
+            <Card
+              key={item.id}
+              className={cn(
+                "group relative overflow-hidden transition-all duration-200 cursor-pointer border-2",
+                isSelected ? "border-indigo-500 shadow-md transform scale-[1.02]" : "border-transparent hover:border-slate-200"
+              )}
+              onClick={(e) => toggleSelection(item.id, e)}
+            >
+              <div className="aspect-square bg-slate-100 relative">
+                {item.type === "image" ? (
+                  <img src={item.readUrl} alt={item.name} className="w-full h-full object-cover" />
+                ) : item.type === "video" ? (
+                  <div className="w-full h-full flex items-center justify-center bg-slate-900">
+                    <video src={item.readUrl} className="w-full h-full object-cover opacity-80" />
+                    <FileVideo className="absolute w-12 h-12 text-white/50" />
                   </div>
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-indigo-50 to-purple-50">
+                    <Music className="w-16 h-16 text-indigo-400" />
+                  </div>
+                )}
 
-                  {item.type === "image" ? (
-                    <img
-                      src={item.readUrl}
-                      alt={item.name}
-                      className="w-full h-full object-cover"
+                {/* Overlay on hover / selected */}
+                <div className={cn(
+                  "absolute inset-0 bg-black/40 transition-opacity flex flex-col justify-end p-3",
+                  isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                )}>
+                  <div className="flex items-center justify-between">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => { }}
+                      className="w-5 h-5 rounded border-white/50 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
                     />
-                  ) : (
-                    <video
-                      src={item.readUrl}
-                      className="w-full h-full object-cover"
-                    />
-                  )}
-
-                  {/* File type badge */}
-                  <div className="absolute bottom-2 left-2 bg-white/90 px-2 py-1 rounded text-xs flex items-center gap-1">
-                    {item.type === "image" ? <FileImage className="w-3 h-3 text-blue-600" /> : <FileVideo className="w-3 h-3 text-purple-600" />}
-                    <span className="capitalize">{item.type}</span>
+                    <div className="flex gap-1">
+                      <Button variant="secondary" size="icon" className="h-8 w-8 rounded-full" onClick={(e) => { e.stopPropagation(); setPreviewItem(item); }}>
+                        <Monitor className="w-4 h-4" />
+                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="secondary" size="icon" className="h-8 w-8 rounded-full">
+                            <MoreVertical className="w-4 h-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openRenameModal(item); }}>
+                            Rename
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); assignSingle(item.id); }}>
+                            Add to Timeline
+                          </DropdownMenuItem>
+                          <DropdownMenuItem className="text-red-600" onClick={(e) => { e.stopPropagation(); deleteItem(item.id); }}>
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
                   </div>
                 </div>
 
-                <CardContent className="p-3 space-y-1">
-                  {/* Name and three-dot menu on same row */}
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-medium truncate flex-1" title={item.name}>
-                      {item.name}
-                    </p>
+                {/* Type Badge - Top Left */}
+                <span className="absolute top-2 left-2 px-2 py-0.5 rounded bg-black/50 text-white text-[10px] uppercase font-medium">
+                  {item.type}
+                </span>
 
-                    {/* Three-dot menu */}
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 flex-shrink-0"
-                        >
-                          <MoreVertical className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="z-50">
-                        <DropdownMenuItem onClick={() => openRenameModal(item)}>
-                          Rename
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => assignSingle(item.id)}>
-                          Assign to Program
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          className="text-red-600 focus:text-red-600 focus:bg-red-50"
-                          onSelect={(e) => {
-                            e.preventDefault();
-                            // Use setTimeout to let the menu close first, then show confirm
-                            setTimeout(() => deleteItem(item.id), 0);
-                          }}
-                        >
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-
-                  <p className="text-xs text-muted-foreground">
-                    {formatFileSize(item.size)} • {formatDistanceToNow(new Date(item.createdAt), { addSuffix: true })}
-                  </p>
-                  <div className="text-xs text-muted-foreground">
-                    <span className="font-medium">Assigned To</span>
-                    <br />
-                    {assignedScreens.length > 0 ? (
-                      <span>{assignedScreens.join(", ")}</span>
-                    ) : (
-                      <span className="text-gray-400">Not assigned</span>
+                {/* File Size - Top Right (Moved as requested) */}
+                <span className="absolute top-2 right-2 px-2 py-0.5 rounded bg-black/50 text-white text-[10px] font-medium">
+                  {formatFileSize(item.size)}
+                </span>
+              </div>
+              <div className="p-3">
+                <p className="font-medium text-sm truncate" title={item.name}>{item.name}</p>
+                <div className="flex items-center justify-between text-xs text-muted-foreground mt-1">
+                  <span>{item.type === 'image' ? formatFileSize(item.size) : formatDistanceToNow(new Date(item.createdAt), { addSuffix: true })}</span>
+                </div>
+                {assignedTo.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {assignedTo.slice(0, 2).map((name, i) => (
+                      <span key={i} className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 rounded text-[10px] truncate max-w-[80px]">
+                        {name}
+                      </span>
+                    ))}
+                    {assignedTo.length > 2 && (
+                      <span className="px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px]">+{assignedTo.length - 2}</span>
                     )}
                   </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-          {filteredContent.length === 0 && (
-            <div className="col-span-full text-center py-12 text-muted-foreground">
-              No content found. Upload some images or videos!
-            </div>
-          )}
+                )}
+              </div>
+            </Card>
+          );
+        })}
+      </div>
+
+      {filteredContent.length === 0 && !loading && (
+        <div className="text-center py-20 border-2 border-dashed rounded-lg bg-slate-50">
+          <p className="text-muted-foreground">No content found</p>
+          <Button variant="link" onClick={() => fileInputRef.current?.click()}>Upload something</Button>
         </div>
       )}
 
       {/* Preview Modal */}
       {previewItem && (
-        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4" onClick={() => setPreviewItem(null)}>
-          <div className="relative max-w-4xl max-h-[90vh] w-full" onClick={(e) => e.stopPropagation()}>
-            <button
-              onClick={() => setPreviewItem(null)}
-              className="absolute -top-12 right-0 text-white hover:text-gray-300"
-            >
-              <XIcon className="w-8 h-8" />
-            </button>
-            {previewItem.type === "image" ? (
-              <img
-                src={previewItem.readUrl}
-                alt={previewItem.name}
-                className="w-full h-full object-contain"
-              />
-            ) : (
-              <video
-                src={previewItem.readUrl}
-                controls
-                autoPlay
-                className="w-full h-full object-contain"
-              />
-            )}
-            <div className="mt-4 text-white text-center">
-              <p className="font-medium">{previewItem.name}</p>
-              <p className="text-sm text-gray-300 mt-1">
-                {formatFileSize(previewItem.size)} • Uploaded {formatDistanceToNow(new Date(previewItem.createdAt), { addSuffix: true })}
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={() => setPreviewItem(null)}>
+          <div className="relative max-w-4xl max-h-[90vh] w-full bg-black rounded-lg overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
+            <Button variant="ghost" size="icon" className="absolute top-2 right-2 text-white/70 hover:text-white z-10 hover:bg-white/10" onClick={() => setPreviewItem(null)}>
+              <XIcon className="w-6 h-6" />
+            </Button>
+
+            <div className="flex items-center justify-center bg-black aspect-video">
+              {previewItem.type === "image" ? (
+                <img src={previewItem.readUrl} className="max-w-full max-h-[80vh] object-contain" />
+              ) : previewItem.type === "video" ? (
+                <video src={previewItem.readUrl} controls autoPlay className="max-w-full max-h-[80vh]" />
+              ) : (
+                <div className="text-center text-white">
+                  <Music className="w-24 h-24 mx-auto mb-4 text-indigo-400" />
+                  <h3 className="text-xl font-medium mb-4">{previewItem.name}</h3>
+                  <audio src={previewItem.readUrl} controls autoPlay className="w-[300px]" />
+                </div>
+              )}
+            </div>
+            <div className="p-4 bg-zinc-900 border-t border-zinc-800 text-white">
+              <h3 className="font-medium text-lg">{previewItem.name}</h3>
+              <p className="text-sm text-zinc-400 flex gap-4 mt-1">
+                <span>Type: {previewItem.type}</span>
+                <span>Size: {formatFileSize(previewItem.size)}</span>
+                <span>Added: {new Date(previewItem.createdAt).toLocaleDateString()}</span>
               </p>
             </div>
           </div>
@@ -475,57 +484,66 @@ export function Content() {
       )}
 
       {/* Assign Modal */}
-      {assignModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setAssignModalOpen(false)}>
-          <div className="bg-white rounded-lg p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-xl font-bold mb-4">Assign to Program</h2>
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm font-medium mb-2 block">Select Program</label>
-                <select
-                  className="w-full border rounded-md px-3 py-2"
-                  value={selectedScreenId}
-                  onChange={(e) => setSelectedScreenId(e.target.value)}
-                >
-                  <option value="">Choose a program...</option>
-                  {screens.map(screen => (
-                    <option key={screen.id} value={screen.id}>{screen.name}</option>
-                  ))}
-                </select>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                {selectedIds.size} item(s) will be assigned
-              </p>
-              <div className="flex gap-2 justify-end">
-                <Button variant="outline" onClick={() => setAssignModalOpen(false)}>Cancel</Button>
-                <Button onClick={bulkAssign}>Assign</Button>
-              </div>
-            </div>
+      <DropdownMenu open={assignModalOpen} onOpenChange={setAssignModalOpen}>
+        <DropdownMenuContent className="w-full sm:w-80 p-0 transform -translate-x-1/2 left-1/2 fixed top-1/2 -translate-y-1/2 z-50 bg-white shadow-xl border rounded-lg">
+          <div className="p-4 border-b">
+            <h3 className="font-semibold">Assign to Program</h3>
+            <p className="text-xs text-muted-foreground">Add {selectedIds.size} item(s) to a timeline</p>
           </div>
-        </div>
-      )}
+          <div className="p-2 max-h-[300px] overflow-y-auto">
+            {screens.length === 0 ? (
+              <p className="p-4 text-sm text-center text-muted-foreground">No programs found.</p>
+            ) : (
+              <div className="space-y-1">
+                {screens.map(screen => (
+                  <button
+                    key={screen.id}
+                    className={cn(
+                      "w-full text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center justify-between",
+                      selectedScreenId === screen.id ? "bg-indigo-50 text-indigo-700 font-medium" : "hover:bg-slate-50"
+                    )}
+                    onClick={() => setSelectedScreenId(screen.id)}
+                  >
+                    <span>{screen.name}</span>
+                    {selectedScreenId === screen.id && <div className="w-2 h-2 rounded-full bg-indigo-600" />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="p-4 border-t bg-slate-50 flex justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={() => setAssignModalOpen(false)}>Cancel</Button>
+            <Button size="sm" onClick={bulkAssign} disabled={!selectedScreenId}>Assign</Button>
+          </div>
+        </DropdownMenuContent>
+      </DropdownMenu>
 
-      {/* Rename Modal */}
-      {renameModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setRenameModalOpen(false)}>
-          <div className="bg-white rounded-lg p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-xl font-bold mb-4">Rename Content</h2>
-            <div className="space-y-4">
+      {/* Rename Modal - Switched to Dialog for Centering */}
+      <Dialog open={renameModalOpen} onOpenChange={setRenameModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Rename Content</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="rename-input">New Name</Label>
               <Input
+                id="rename-input"
                 value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                placeholder="Enter new name..."
+                onChange={e => setNewName(e.target.value)}
+                placeholder="Enter new name"
                 onKeyDown={(e) => e.key === 'Enter' && renameItem()}
-                autoFocus
               />
-              <div className="flex gap-2 justify-end">
-                <Button variant="outline" onClick={() => setRenameModalOpen(false)}>Cancel</Button>
-                <Button onClick={renameItem}>Rename</Button>
-              </div>
             </div>
           </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRenameModalOpen(false)}>Cancel</Button>
+            <Button onClick={renameItem}>Save Changes</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
+
+

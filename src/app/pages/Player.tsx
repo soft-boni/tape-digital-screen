@@ -1,239 +1,168 @@
 import { useEffect, useState, useRef } from "react";
-import { apiFetch } from "../utils/api";
-import { supabase } from "../App";
-import { Loader2, Monitor, Settings as SettingsIcon, Play, RefreshCw, Sun, Volume2, X } from "lucide-react";
+import { Loader2, Monitor, Play, Pause, RefreshCw, Volume2, Music, X, Settings, ArrowLeft } from "lucide-react";
 import { QRCodeSVG } from 'qrcode.react';
 import { Button } from "../components/ui/button";
 import { TapeLogo } from "../components/TapeLogo";
+import { cn } from "../components/ui/utils";
 
 type ViewState = 'unregistered' | 'not-connected' | 'connected' | 'playing' | 'settings';
 
 export function Player() {
   const [deviceId, setDeviceId] = useState<string | null>(null);
-  const [user, setUser] = useState<any>(null);
-  const [ownerId, setOwnerId] = useState<string | null>(null);
   const [pin, setPin] = useState<string | null>(null);
   const [viewState, setViewState] = useState<ViewState>('unregistered');
   const [loading, setLoading] = useState(true);
+
+  // Player Data
   const [content, setContent] = useState<any[]>([]);
+  const [globalTransition, setGlobalTransition] = useState<string>("fade");
+  const [transitionDuration, setTransitionDuration] = useState<number>(500);
+  const [backgroundMusic, setBackgroundMusic] = useState<string | null>(null);
+
+  // Playback State
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [globalTime, setGlobalTime] = useState(0);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const requestRef = useRef<number | undefined>(undefined);
+  const lastTimeRef = useRef<number | undefined>(undefined);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const prevIndexRef = useRef<number>(0);
+
+  // Update prevIndexRef whenever currentIndex changes
+  useEffect(() => {
+    prevIndexRef.current = currentIndex;
+  }, [currentIndex]);
+
+  // Device Info
   const [deviceName, setDeviceName] = useState("Samsung 55' Smart Display");
   const [accountName, setAccountName] = useState("User");
   const [accountAvatar, setAccountAvatar] = useState<string | null>(null);
-  const [showControls, setShowControls] = useState(true);
-  const [brightness, setBrightness] = useState(100);
-  const [volume, setVolume] = useState(50);
   const [registrationError, setRegistrationError] = useState<string | null>(null);
-  const [isTransitioning, setIsTransitioning] = useState(false);
-  const [backgroundMusic, setBackgroundMusic] = useState<string | null>(null);
-  const audioRef = useRef<HTMLAudioElement>(null);
+  const [showControls, setShowControls] = useState(true);
+  const [volume, setVolume] = useState(50);
 
-  // Check for existing device on mount
+  // --- Initialization & Polling ---
+
   useEffect(() => {
     const storedDeviceId = localStorage.getItem('deviceId');
     const storedPin = localStorage.getItem('devicePin');
 
     if (storedDeviceId) {
-      // Check if this device still exists and is activated
       setDeviceId(storedDeviceId);
-      if (storedPin) {
-        setPin(storedPin);
-      }
-      setViewState('not-connected'); // Default to not-connected until we confirm activation
+      if (storedPin) setPin(storedPin);
+      setViewState('not-connected');
+      setLoading(true); // Ensure loading is true while checking
       checkActivationStatus(storedDeviceId);
     } else {
-      // No stored device - show manual registration screen
       setViewState('unregistered');
       setLoading(false);
     }
   }, []);
 
-  // Poll for activation status (only when not connected and has deviceId)
   useEffect(() => {
-    if (!deviceId || viewState !== 'not-connected') return;
-
+    if (!deviceId || viewState === 'playing') return;
     const interval = setInterval(() => checkActivationStatus(deviceId), 5000);
     return () => clearInterval(interval);
   }, [deviceId, viewState]);
 
-  // Fetch and sync owner profile data
+  // --- Real Player Engine (Loop) ---
+
+  const totalDuration = content.reduce((acc: number, item: any) => acc + (item.duration * 1000), 0) || 0;
+
+  const animate = (time: number) => {
+    if (lastTimeRef.current !== undefined) {
+      const deltaTime = time - lastTimeRef.current;
+      setGlobalTime((prevTime) => {
+        let newTime = prevTime + deltaTime;
+        if (newTime >= totalDuration) {
+          newTime = newTime % totalDuration;
+        }
+        return newTime;
+      });
+    }
+    lastTimeRef.current = time;
+    requestRef.current = requestAnimationFrame(animate);
+  };
+
   useEffect(() => {
-    if (!ownerId) return;
-
-    const fetchOwnerProfile = async () => {
-      try {
-        // Fetch the owner's profile from Supabase
-        const { data: profile, error } = await supabase
-          .from('profiles')
-          .select('name, avatar_url')
-          .eq('id', ownerId)
-          .single();
-
-        if (error) {
-          console.error('Profile fetch error:', error);
-          return;
-        }
-
-        if (profile) {
-          console.log('✅ Profile fetched:', profile);
-          setAccountName(profile.name || 'User');
-          setAccountAvatar(profile.avatar_url || null);
-        }
-      } catch (error) {
-        console.error('Failed to fetch owner profile:', error);
-      }
+    if (isPlaying && totalDuration > 0) {
+      requestRef.current = requestAnimationFrame(animate);
+      if (audioRef.current) audioRef.current.play().catch(e => console.warn("Autoplay blocked", e));
+    } else {
+      lastTimeRef.current = undefined;
+      if (requestRef.current) cancelAnimationFrame(requestRef.current);
+      if (audioRef.current) audioRef.current.pause();
+    }
+    return () => {
+      if (requestRef.current) cancelAnimationFrame(requestRef.current);
     };
+  }, [isPlaying, totalDuration, backgroundMusic]);
 
-    // Fetch immediately
-    fetchOwnerProfile();
-
-    // Refresh every 30 seconds
-    const interval = setInterval(fetchOwnerProfile, 30000);
-    return () => clearInterval(interval);
-  }, [ownerId]);
-
-  // Auto-advance content with transitions
+  // Sync Current Index
   useEffect(() => {
-    if (viewState !== 'playing' || content.length === 0) return;
+    let accumulatedTime = 0;
+    let foundIndex = 0;
 
-    const currentItem = content[currentIndex];
-    const duration = currentItem?.duration ? currentItem.duration * 1000 : 10000; // Use item duration or default to 10s
-
-    const timeout = setTimeout(() => {
-      const transition = currentItem?.transition || 'fade';
-      const transitionDuration = currentItem?.transitionDuration || 500;
-
-      if (transition !== 'none') {
-        setIsTransitioning(true);
-        setTimeout(() => {
-          setCurrentIndex((prev) => (prev + 1) % content.length);
-          setTimeout(() => setIsTransitioning(false), transitionDuration / 2);
-        }, transitionDuration / 2);
-      } else {
-        setCurrentIndex((prev) => (prev + 1) % content.length);
+    for (let i = 0; i < content.length; i++) {
+      const itemDuration = content[i].duration * 1000;
+      if (globalTime >= accumulatedTime && globalTime < accumulatedTime + itemDuration) {
+        foundIndex = i;
+        break;
       }
-    }, duration);
+      accumulatedTime += itemDuration;
+    }
+    setCurrentIndex(foundIndex);
+  }, [globalTime, content]);
 
-    return () => clearTimeout(timeout);
-  }, [currentIndex, content, viewState]);
+  // Audio Volume Sync
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.volume = volume / 100;
+  }, [volume]);
 
   // Auto-hide controls
   useEffect(() => {
-    if (viewState !== 'playing') return;
-
-    const timeout = setTimeout(() => setShowControls(false), 5000);
-    return () => clearTimeout(timeout);
-  }, [showControls, viewState]);
-
-  // Update audio volume when volume state changes
-  useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.volume = volume / 100;
-    }
-  }, [volume]);
-
-  // Play background music when entering playing state or when backgroundMusic changes
-  useEffect(() => {
-    if (viewState === 'playing' && backgroundMusic && audioRef.current) {
-      // Try to play audio - handle autoplay policy
-      const playPromise = audioRef.current.play();
-      if (playPromise !== undefined) {
-        playPromise.catch(error => {
-          console.warn('Background music autoplay was blocked:', error);
-          console.log('User interaction may be required to start audio');
-        });
+    let timeout: any;
+    const resetControls = () => {
+      setShowControls(true);
+      clearTimeout(timeout);
+      if (viewState === 'playing') {
+        timeout = setTimeout(() => setShowControls(false), 3000);
       }
+    };
+    window.addEventListener('mousemove', resetControls);
+    window.addEventListener('click', resetControls);
+    return () => {
+      window.removeEventListener('mousemove', resetControls);
+      window.removeEventListener('click', resetControls);
+      clearTimeout(timeout);
     }
-  }, [viewState, backgroundMusic]);
+  }, [viewState]);
+
+
+  // --- API Functions ---
 
   async function registerDevice() {
     try {
       setLoading(true);
-
-      // Get IP address (with timeout)
+      // ... (IP detection logic derived from previous implementation)
       let ipAddress = 'unknown';
       try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
-        const ipRes = await fetch('https://api.ipify.org?format=json', {
-          signal: controller.signal
-        });
-        clearTimeout(timeoutId);
-        const ipData = await ipRes.json();
-        ipAddress = ipData.ip;
-      } catch (e) {
-        console.warn('Could not detect IP, using unknown');
-      }
+        const res = await fetch('https://api.ipify.org?format=json');
+        ipAddress = (await res.json()).ip;
+      } catch (e) { }
 
-      // Register device - use direct fetch for public endpoint
       const { projectId, publicAnonKey } = await import('../../../utils/supabase/info');
-      const SUPABASE_ANON_KEY = publicAnonKey;
-
-      if (!SUPABASE_ANON_KEY) {
-        throw new Error('Missing Supabase anon key. Please check your configuration.');
-      }
-
-      if (!projectId) {
-        throw new Error('Missing projectId. Please check your Supabase configuration.');
-      }
-
       const BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-31bfbcca`;
 
-      console.log('Registering device at:', BASE_URL);
-      console.log('Using projectId:', projectId);
-
-      // Create abort controller for timeout
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
-
-      // Based on apiFetch pattern: "/content" -> BASE_URL + "/content" = "https://.../make-server-31bfbcca/content"
-      // Backend expects: BASE_PATH + "/content" = "/make-server-31bfbcca/content"
-      // This means Supabase strips "/functions/v1" but keeps the function name in the path
-      // So we should call: BASE_URL + "/make-server-31bfbcca/player/register"
-      // But BASE_URL already includes function name, so we just add "/make-server-31bfbcca/player/register"
-      // Actually wait - that would duplicate. Let me check: BASE_URL = "https://.../functions/v1/make-server-31bfbcca"
-      // So full URL = "https://.../functions/v1/make-server-31bfbcca/make-server-31bfbcca/player/register"
-      // That's wrong! Let me try without the duplicate:
-      const fullUrl = `${BASE_URL}/player/register`;
-      console.log('Full registration URL:', fullUrl);
-      console.log('Expected backend route:', '/make-server-31bfbcca/player/register');
-      const response = await fetch(fullUrl, {
+      const response = await fetch(`${BASE_URL}/player/register`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-        },
-        body: JSON.stringify({ ipAddress }),
-        signal: controller.signal
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${publicAnonKey}` },
+        body: JSON.stringify({ ipAddress })
       });
 
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        let errorData;
-        try {
-          errorData = JSON.parse(errorText);
-        } catch {
-          errorData = { error: errorText || `Registration failed with status ${response.status}` };
-        }
-        console.error('Registration error response:', errorData);
-        console.error('Response status:', response.status);
-        console.error('Response headers:', Object.fromEntries(response.headers.entries()));
-
-        // Provide more helpful error message
-        if (response.status === 404) {
-          throw new Error(`Endpoint not found. The Supabase Edge Function may not be deployed. URL: ${fullUrl}`);
-        }
-
-        throw new Error(errorData.error || errorData.message || `Registration failed with status ${response.status}`);
-      }
-
+      if (!response.ok) throw new Error("Registration failed");
       const res = await response.json();
-      console.log('Registration successful:', res);
 
-      // Store device ID and PIN
       localStorage.setItem('deviceId', res.deviceId);
       localStorage.setItem('devicePin', res.pin);
       setDeviceId(res.deviceId);
@@ -241,707 +170,340 @@ export function Player() {
       setViewState('not-connected');
       setLoading(false);
     } catch (error: any) {
-      console.error('Registration failed:', error);
+      console.error(error);
+      setRegistrationError(error.message);
       setLoading(false);
-
-      const errorMessage = error.name === 'AbortError' || error.name === 'TimeoutError'
-        ? 'Registration timed out. Please check your internet connection.'
-        : error.message || 'Unknown error occurred';
-
-      setRegistrationError(errorMessage);
-
-      // Clear any stale data
-      localStorage.removeItem('deviceId');
-      localStorage.removeItem('devicePin');
-      setDeviceId(null);
-      setPin(null);
-      setViewState('not-connected');
     }
   }
 
   async function checkActivationStatus(devId: string) {
     try {
-      // Use direct fetch for public endpoint
       const { projectId, publicAnonKey } = await import('../../../utils/supabase/info');
-      const SUPABASE_ANON_KEY = publicAnonKey;
       const BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-31bfbcca`;
 
-      // Create abort controller for timeout
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-
       const response = await fetch(`${BASE_URL}/player/status?deviceId=${devId}`, {
-        headers: {
-          'apikey': SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-        },
-        signal: controller.signal
+        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
       });
 
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        throw new Error(`Status check failed with status ${response.status}`);
-      }
-
+      if (!response.ok) return; // Silent fail on polling
       const res = await response.json();
 
       if (res.deleted) {
-        // Device was deleted by admin, register new one
-        localStorage.removeItem('deviceId');
-        localStorage.removeItem('devicePin');
-        setDeviceId(null);
-        setPin(null);
-        setViewState('not-connected');
-        registerDevice();
+        localStorage.clear();
+        window.location.reload();
         return;
       }
 
       if (res.activated) {
-        console.log('✅ Device activated, content received:', res.content);
-        console.log('📊 Content count:', res.content?.length || 0);
-        console.log('📋 Full response:', res);
+        setAccountName(res.accountName);
+        setAccountAvatar(res.accountAvatar);
+        setDeviceName(res.deviceName);
+
+        // Updates content and settings
+        if (res.content) setContent(res.content);
+        if (res.backgroundMusic) setBackgroundMusic(res.backgroundMusic);
+        if (res.transition) setGlobalTransition(res.transition);
+        if (res.transitionDuration) setTransitionDuration(res.transitionDuration);
+
+        // Only switch view if not already playing or manually stopped
         setViewState('connected');
-        setContent(res.content || []);
-        setAccountName(res.accountName || 'User');
-        setAccountAvatar(res.accountAvatar || null);
-
-        // Load background music if exists
-        if (res.backgroundMusic) {
-          console.log('🎵 Background music found:', res.backgroundMusic);
-          setBackgroundMusic(res.backgroundMusic);
-        }
-
-        // Try to get ownerId from response
-        if (res.ownerId) {
-          console.log('Setting ownerId from response:', res.ownerId);
-          setOwnerId(res.ownerId);
-        } else if (res.userId) {
-          console.log('Setting ownerId from userId:', res.userId);
-          setOwnerId(res.userId);
-        } else if (res.user_id) {
-          console.log('Setting ownerId from user_id:', res.user_id);
-          setOwnerId(res.user_id);
-        } else {
-          console.log('⚠️ No owner ID in response, fetching from Supabase...');
-          // Fallback: fetch device owner from Supabase
-          (async () => {
-            try {
-              const { data: device } = await supabase
-                .from('devices')
-                .select('user_id')
-                .eq('id', deviceId)
-                .maybeSingle();
-
-              if (device?.user_id) {
-                console.log('✅ Owner ID fetched from Supabase:', device.user_id);
-                setOwnerId(device.user_id);
-              } else {
-                console.log('❌ Could not fetch owner ID from Supabase');
-              }
-            } catch (error) {
-              console.error('Error fetching owner ID:', error);
-            }
-          })();
-        }
-
-        setDeviceName(res.deviceName || "Samsung 55' Smart Display");
-        // Clear PIN from localStorage once activated
         localStorage.removeItem('devicePin');
-      } else {
-        // Device exists but not activated - show PIN screen
-        setViewState('not-connected');
-        // Ensure PIN is set from localStorage
-        const storedPin = localStorage.getItem('devicePin');
-        if (storedPin) {
-          setPin(storedPin);
-        }
+        setPin(null);
       }
-
       setLoading(false);
-    } catch (error: any) {
-      console.error('Status check failed:', error);
-      setLoading(false);
-      // On error, assume not activated and show PIN screen
-      setViewState('not-connected');
-      const storedPin = localStorage.getItem('devicePin');
-      if (storedPin) {
-        setPin(storedPin);
-      }
-    }
-  }
-
-  async function syncContent() {
-    if (!deviceId) return;
-
-    try {
-      const res = await apiFetch(`/player/status?deviceId=${deviceId}`);
-      console.log('🔄 Sync content received:', res.content);
-      setContent(res.content || []);
-
-      // Sync background music too
-      if (res.backgroundMusic) {
-        setBackgroundMusic(res.backgroundMusic);
-      } else {
-        setBackgroundMusic(null);
-      }
     } catch (error) {
-      console.error('Sync failed:', error);
+      console.error("Status check error", error);
+      // Fallback if check fails (e.g. offline) - show last known state or connection screen
+      if (viewState === 'unregistered' || viewState === 'not-connected') {
+        setViewState('not-connected');
+        setLoading(false);
+      }
     }
   }
 
-  async function handleUpdateDeviceName() {
-    if (!deviceId || !deviceName.trim()) return;
-
-    try {
-      await apiFetch(`/devices/${deviceId}`, {
-        method: 'PUT',
-        body: JSON.stringify({ name: deviceName.trim() })
-      });
-
-      // Update local state
-      const res = await apiFetch(`/player/status?deviceId=${deviceId}`);
-      setDeviceName(res.deviceName || deviceName);
-
-      alert('Device name updated successfully');
-    } catch (error: any) {
-      alert(error.message || 'Failed to update device name');
+  const handlePlay = () => {
+    if (content.length === 0) {
+      alert("No content assigned to this screen.");
+      return;
     }
-  }
+    setViewState('playing');
+    setIsPlaying(true);
+  };
 
-  async function handleRemoveDevice() {
-    if (!deviceId) return;
+  const formatTime = (ms: number) => {
+    const s = Math.floor(ms / 1000);
+    const m = Math.floor(s / 60);
+    const rs = s % 60;
+    return `${m}:${rs.toString().padStart(2, '0')}`;
+  };
 
-    if (!confirm('Remove this device from your account? It will need to be re-activated with a new PIN.')) return;
+  // --- Render ---
 
-    try {
-      await apiFetch(`/devices/${deviceId}`, {
-        method: 'DELETE'
-      });
-
-      // Clear local state
-      localStorage.removeItem('deviceId');
-      localStorage.removeItem('devicePin');
-      setDeviceId(null);
-      setPin(null);
-      setViewState('not-connected');
-
-      // Register new device with new PIN
-      await registerDevice();
-    } catch (error: any) {
-      alert(error.message || 'Failed to remove device');
-    }
-  }
-
-  // Unregistered Screen - User must manually register device
   if (viewState === 'unregistered') {
     return (
       <div className="h-screen flex items-center justify-center bg-gray-50">
-        <div className="max-w-md w-full text-center p-8">
-          <div className="mb-8 flex justify-center">
-            <TapeLogo width={120} />
-          </div>
-
-          <h1 className="text-3xl font-semibold mb-4">
-            Register This Device
-          </h1>
-
-          <p className="text-gray-600 mb-8">
-            Click the button below to register this device and generate a PIN code. You'll need this PIN to add the device from your admin dashboard.
-          </p>
-
-          <Button
-            onClick={registerDevice}
-            disabled={loading}
-            size="lg"
-            className="w-full h-14 text-lg"
-          >
-            {loading ? (
-              <>
-                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                Registering...
-              </>
-            ) : (
-              <>
-                <Monitor className="w-5 h-5 mr-2" />
-                Register Device
-              </>
-            )}
+        <div className="text-center p-8">
+          <div className="mb-6 flex justify-center"><TapeLogo width={120} /></div>
+          <h1 className="text-2xl font-bold mb-4">New Device</h1>
+          <Button onClick={registerDevice} disabled={loading} size="lg">
+            {loading ? <Loader2 className="animate-spin mr-2" /> : <Monitor className="mr-2" />}
+            Register Device
           </Button>
-
-          {registrationError && (
-            <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-              <p className="text-sm text-red-600">{registrationError}</p>
-            </div>
-          )}
+          {registrationError && <p className="text-red-500 mt-4">{registrationError}</p>}
         </div>
       </div>
     );
   }
 
-  // Connection Screen (QR + PIN) - Show if not connected
   if (viewState === 'not-connected') {
-    // If no PIN yet, show loading or register device
-    if (!pin) {
-      if (deviceId) {
-        // Device exists but no PIN - might be loading
-        return (
-          <div className="h-screen flex items-center justify-center bg-gray-50">
-            <div className="text-center">
-              <Loader2 className="w-12 h-12 text-blue-500 animate-spin mx-auto mb-4" />
-              <p className="text-gray-600 mb-4">Loading device information...</p>
-              <Button onClick={() => {
-                localStorage.removeItem('deviceId');
-                setDeviceId(null);
-                registerDevice();
-              }} variant="outline">
-                Retry Registration
-              </Button>
-            </div>
-          </div>
-        );
-      } else {
-        // No device, should register
-        return (
-          <div className="h-screen flex items-center justify-center bg-gray-50">
-            <div className="text-center max-w-md">
-              {loading ? (
-                <>
-                  <Loader2 className="w-12 h-12 text-blue-500 animate-spin mx-auto mb-4" />
-                  <p className="text-gray-600 mb-4">Registering device...</p>
-                  <p className="text-sm text-gray-500 mb-4">This may take a few seconds</p>
-                </>
-              ) : registrationError ? (
-                <>
-                  <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-                    <p className="text-red-800 font-medium mb-2">Registration Failed</p>
-                    <p className="text-sm text-red-600">{registrationError}</p>
-                  </div>
-                  <Button onClick={() => {
-                    setRegistrationError(null);
-                    registerDevice();
-                  }} variant="outline">
-                    Retry Registration
-                  </Button>
-                </>
-              ) : (
-                <Button onClick={() => registerDevice()} variant="outline">
-                  Start Registration
-                </Button>
-              )}
-            </div>
-          </div>
-        );
-      }
+    if (loading) {
+      return (
+        <div className="h-screen flex flex-col items-center justify-center bg-gray-50">
+          <Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-4" />
+          <h2 className="text-xl font-semibold text-gray-600">Connecting to server...</h2>
+        </div>
+      );
     }
-
-    const qrUrl = `https://tape-screen.vercel.app/connect?pin=${pin}`;
 
     return (
       <div className="h-screen flex items-center justify-center bg-gray-50 p-8">
-        <div className="max-w-4xl w-full">
-          <div className="mb-8 flex justify-center">
-            <TapeLogo width={150} />
+        <div className="max-w-4xl w-full bg-white rounded-xl shadow-sm p-12 flex gap-12">
+          <div className="flex-1 border-r pr-12 flex flex-col items-center justify-center">
+            <h2 className="text-xl font-bold mb-6">Scan to Connect</h2>
+            <div className="p-4 bg-white border-2 rounded-lg">
+              <QRCodeSVG value={`https://tape-screen.vercel.app/connect?pin=${pin}`} size={200} />
+            </div>
           </div>
-          <h1 className="text-4xl font-semibold text-center mb-12">Connect to tape</h1>
-
-          <div className="bg-white rounded-xl p-12 shadow-sm flex gap-8">
-            {/* QR Code Section */}
-            <div className="flex-1 flex flex-col items-center justify-center border-r border-gray-200 pr-8">
-              <h2 className="text-xl font-medium mb-2">Scan the QR code</h2>
-              <p className="text-gray-600 text-sm mb-6 text-center">
-                Use your mobile camera to scan the QR code
-              </p>
-              <div className="bg-white p-6 rounded-lg border-2 border-gray-200">
-                <QRCodeSVG
-                  value={qrUrl}
-                  size={200}
-                  level="H"
-                  includeMargin={true}
-                />
-              </div>
-              <p className="text-center mt-4 text-xl font-bold text-gray-400">OR</p>
+          <div className="flex-1 flex flex-col justify-center">
+            <h2 className="text-xl font-bold mb-4">Or Enter PIN</h2>
+            <div className="text-6xl font-mono font-bold text-blue-600 tracking-wider bg-blue-50 p-6 rounded-lg text-center mb-4">
+              {pin || "..."}
             </div>
-
-            {/* PIN Section */}
-            <div className="flex-1 flex flex-col justify-center pl-8">
-              <h2 className="text-xl font-medium mb-2">Enter PIN on Web</h2>
-              <p className="text-gray-600 text-sm mb-6">
-                Enter your screen PIN on the add screen page
-              </p>
-              <ol className="text-sm text-gray-600 space-y-2 mb-6">
-                <li className="flex items-center gap-2">
-                  <span className="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center text-xs">1</span>
-                  Go to tape.io
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center text-xs">2</span>
-                  Sign in or create an account
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center text-xs">3</span>
-                  Enter the following code:
-                </li>
-              </ol>
-              <div className="text-6xl font-bold text-center tracking-wider font-mono text-blue-600">
-                {pin}
-              </div>
-              <p className="text-sm text-gray-500 text-center mt-2">
-                Enter this code on the Devices page
-              </p>
-            </div>
+            <p className="text-gray-500 text-center">Add this ID in your dashboard</p>
           </div>
         </div>
       </div>
     );
   }
 
-  // Device Menu
-  if (viewState === 'connected') {
-    return (
-      <div className="h-screen flex items-center justify-center bg-gray-50">
-        <div className="bg-white rounded-xl p-12 shadow-sm max-w-md w-full text-center">
-          <div className="mb-8 flex justify-center">
-            <TapeLogo width={120} />
-          </div>
-
-          <p className="text-gray-700 mb-8">
-            This device is connected to <span className="font-semibold">{accountName}'s</span> dashboard
-          </p>
-
-          <div className="space-y-3">
-            <Button
-              onClick={() => {
-                if (content.length > 0) {
-                  setViewState('playing');
-                  // Trigger audio playback after user click (for autoplay policy)
-                  setTimeout(() => {
-                    if (backgroundMusic && audioRef.current) {
-                      audioRef.current.play().catch(err => {
-                        console.warn('Failed to play background music:', err);
-                      });
-                    }
-                  }, 100);
-                } else {
-                  alert('No content assigned to this device. Please assign a screen with content from the admin dashboard.');
-                }
-              }}
-              className="w-full h-12 bg-blue-500 hover:bg-blue-600 text-white rounded-lg flex items-center justify-center gap-2"
-            >
-              <Play className="w-5 h-5" />
-              Play
-            </Button>
-
-            <Button
-              onClick={syncContent}
-              className="w-full h-12 bg-gray-900 hover:bg-gray-800 text-white rounded-lg flex items-center justify-center gap-2"
-            >
-              <RefreshCw className="w-5 h-5" />
-              Sync
-            </Button>
-
-            <Button
-              onClick={() => setViewState('settings')}
-              variant="outline"
-              className="w-full h-12 rounded-lg flex items-center justify-center gap-2"
-            >
-              <SettingsIcon className="w-5 h-5" />
-              Settings
-            </Button>
-          </div>
-
-          <p className="text-xs text-gray-500 mt-8">© Copyright 2025 | tape All Rights Reserved</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Settings Page
   if (viewState === 'settings') {
     return (
-      <div className="h-screen flex items-center justify-center bg-gray-50 p-8">
-        <div className="bg-white rounded-xl p-8 shadow-sm max-w-2xl w-full">
-          <h2 className="text-2xl font-semibold mb-2">Device Settings</h2>
-          <p className="text-gray-600 text-sm mb-8">Manage device configuration and connected screens</p>
-
-          {/* Device Name */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium mb-2">Device Name</label>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={deviceName}
-                onChange={(e) => setDeviceName(e.target.value)}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-              <Button
-                onClick={handleUpdateDeviceName}
-                size="sm"
-                className="bg-blue-500 hover:bg-blue-600"
-              >
-                Save
-              </Button>
-            </div>
-          </div>
-
-          {/* Storage Allocation */}
-          <div className="mb-6">
-            <div className="flex justify-between items-center mb-2">
-              <label className="block text-sm font-medium">Storage Allocation</label>
-              <span className="text-sm text-gray-600">24 / 32</span>
-            </div>
-            <div className="w-full bg-gray-200 rounded-full h-2">
-              <div className="bg-blue-500 h-2 rounded-full" style={{ width: '75%' }}></div>
-            </div>
-          </div>
-
-          {/* Connected Account */}
-          <div className="mb-8">
-            <label className="block text-sm font-medium mb-3">Connected Account</label>
-            <p className="text-xs text-gray-600 mb-3">Manage account connected to this device</p>
-            <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
-              <div className="flex items-center gap-3">
-                {accountAvatar ? (
-                  <img
-                    src={accountAvatar}
-                    alt={accountName}
-                    className="w-10 h-10 rounded-full object-cover"
-                  />
-                ) : (
-                  <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 font-semibold">
-                    {accountName.charAt(0).toUpperCase()}
-                  </div>
-                )}
-                <div>
-                  <p className="font-medium">{accountName}</p>
-                  <p className="text-sm text-gray-600">Connected Account</p>
-                </div>
-              </div>
-              <Button
-                variant="destructive"
-                size="sm"
-                className="bg-red-500 hover:bg-red-600"
-                onClick={handleRemoveDevice}
-              >
-                Remove Account
-              </Button>
-            </div>
-          </div>
-
-          <Button
-            onClick={() => setViewState('connected')}
-            variant="outline"
-            className="w-full"
-          >
-            Back to Menu
+      <div className="h-screen flex items-center justify-center bg-slate-50">
+        <div className="bg-white p-8 rounded-2xl shadow-sm max-w-md w-full relative">
+          <Button variant="ghost" size="icon" className="absolute left-4 top-4" onClick={() => setViewState('connected')}>
+            <ArrowLeft className="w-5 h-5" />
           </Button>
+          <div className="text-center mb-8 mt-4">
+            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Settings className="w-8 h-8 text-gray-600" />
+            </div>
+            <h1 className="text-xl font-bold">Player Settings</h1>
+          </div>
+
+          <div className="space-y-4">
+            <div className="bg-slate-50 p-4 rounded-lg">
+              <p className="text-xs text-gray-400 uppercase font-bold mb-1">Device Name</p>
+              <p className="font-medium">{deviceName}</p>
+            </div>
+
+            <Button variant="destructive" className="w-full" onClick={() => {
+              if (confirm("Unregister this device? You will need to re-register carefully.")) {
+                localStorage.clear();
+                window.location.reload();
+              }
+            }}>
+              Unregister Device
+            </Button>
+          </div>
         </div>
       </div>
     );
   }
 
-  // Playing Content
-  if (viewState === 'playing') {
-    console.log('🎬 Entering playing state');
-    console.log('📦 Content array:', content);
-    console.log('📊 Content length:', content.length);
-    console.log('👉 Current index:', currentIndex);
-
-    // Log full JSON structure
-    console.log('🔍 FULL CONTENT JSON:', JSON.stringify(content, null, 2));
-
-    if (content.length === 0) {
-      console.error('❌ No content to play!');
-      return (
-        <div className="h-screen w-full bg-black flex items-center justify-center">
-          <div className="text-center text-white space-y-4">
-            <p className="text-2xl font-bold">No Content Available</p>
-            <p className="text-gray-400">This device has no content assigned.</p>
-            <Button
-              onClick={() => setViewState('connected')}
-              variant="outline"
-              className="mt-4"
-            >
-              Back to Menu
-            </Button>
-          </div>
-        </div>
-      );
-    }
-
-    const currentItem = content[currentIndex];
-    console.log('▶️ Playing content item:', currentIndex, currentItem);
-    console.log('🔍 Current item JSON:', JSON.stringify(currentItem, null, 2));
-    console.log('📌 Has type?', currentItem?.type);
-    console.log('📌 Has url?', currentItem?.url);
-    console.log('📌 Has contentId?', currentItem?.contentId);
-
-    if (!currentItem) {
-      console.error('❌ Current item is undefined!');
-      return (
-        <div className="h-screen w-full bg-black flex items-center justify-center">
-          <div className="text-center text-white space-y-4">
-            <p className="text-2xl font-bold">Content Error</p>
-            <p className="text-gray-400">Current content item is missing.</p>
-            <Button
-              onClick={() => setViewState('connected')}
-              variant="outline"
-              className="mt-4"
-            >
-              Back to Menu
-            </Button>
-          </div>
-        </div>
-      );
-    }
-
-    // Get transition styles helper function
-    const getTransitionStyle = (item: any) => {
-      const transition = item?.transition || 'fade';
-      const transitionDuration = item?.transitionDuration || 500;
-
-      const baseStyle = {
-        transition: `all ${transitionDuration}ms ease-in-out`,
-        width: '100%',
-        height: '100%',
-      };
-
-      if (!isTransitioning) return baseStyle;
-
-      switch (transition) {
-        case 'fade':
-          return { ...baseStyle, opacity: 0 };
-        case 'slide':
-          return { ...baseStyle, transform: 'translateX(-100%)' };
-        case 'zoom':
-          return { ...baseStyle, transform: 'scale(0)' };
-        default:
-          return baseStyle;
-      }
-    };
-
+  if (viewState === 'connected') {
     return (
-      <div
-        className="h-screen w-full bg-black relative"
-        onMouseMove={() => setShowControls(true)}
-      >
-        {/* Content */}
-        <div style={getTransitionStyle(currentItem)}>
-          {currentItem?.type === 'image' ? (
-            <img
-              src={currentItem.url}
-              alt="Content"
-              className="w-full h-full object-contain"
-              onError={(e) => {
-                console.error('❌ Image failed to load:', currentItem.url);
-                e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="300"%3E%3Crect fill="%23333" width="400" height="300"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" fill="white"%3EImage Load Failed%3C/text%3E%3C/svg%3E';
-              }}
-            />
-          ) : currentItem?.type === 'video' ? (
-            <video
-              src={currentItem.url}
-              className="w-full h-full object-contain"
-              autoPlay
-              muted={volume === 0}
-              playsInline
-              onEnded={() => {
-                const transition = currentItem?.transition || 'fade';
-                const transitionDuration = currentItem?.transitionDuration || 500;
+      <div className="h-screen flex items-center justify-center bg-slate-50">
+        <div className="bg-white p-12 rounded-2xl shadow-sm text-center max-w-md w-full">
+          <div className="flex justify-center mb-6"><div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center"><Monitor className="w-10 h-10 text-green-600" /></div></div>
+          <h1 className="text-2xl font-bold mb-2">Ready to Play</h1>
+          <p className="text-gray-500 mb-8">Connected to {accountName}'s Dashboard</p>
 
-                if (transition !== 'none') {
-                  setIsTransitioning(true);
-                  setTimeout(() => {
-                    setCurrentIndex((prev) => (prev + 1) % content.length);
-                    setTimeout(() => setIsTransitioning(false), transitionDuration / 2);
-                  }, transitionDuration / 2);
-                } else {
-                  setCurrentIndex((prev) => (prev + 1) % content.length);
-                }
-              }}
-              onError={(e) => {
-                console.error('❌ Video failed to load:', currentItem.url);
-              }}
-            />
-          ) : (
-            <div className="h-screen w-full flex items-center justify-center text-white">
-              <div className="text-center">
-                <p className="text-2xl">Unknown content type: {currentItem?.type}</p>
-                <p className="text-gray-400 mt-2">URL: {currentItem?.url}</p>
-              </div>
+          <div className="space-y-3">
+            <Button onClick={handlePlay} size="lg" className="w-full h-14 text-lg bg-blue-600 hover:bg-blue-700">
+              <Play className="w-5 h-5 mr-2" /> Start Playback
+            </Button>
+            <div className="grid grid-cols-2 gap-3">
+              <Button onClick={() => checkActivationStatus(deviceId!)} variant="outline" className="w-full">
+                <RefreshCw className="w-4 h-4 mr-2" /> Sync
+              </Button>
+              <Button onClick={() => setViewState('settings')} variant="outline" className="w-full">
+                <Settings className="w-4 h-4 mr-2" /> Settings
+              </Button>
             </div>
-          )}
+          </div>
+
+          <div className="mt-8 pt-6 border-t">
+            <div className="flex items-center justify-center gap-2 text-sm text-gray-400">
+              <p className="font-semibold text-gray-600">{deviceName}</p>
+              <span>•</span>
+              <p>{Math.round(totalDuration / 1000 / 60)} min loop</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // --- Playing View ---
+  return (
+    <div className="relative h-screen w-full bg-black overflow-hidden">
+      {/* Content Renderer */}
+      {content.map((item: any, idx: number) => {
+        const isActive = idx === currentIndex;
+        // Check if this item was the previous one (exiting)
+        // CRITICAL: Ensure an item is not both active and exiting at the same time
+        const isExiting = idx === (prevIndexRef.current ?? -1) && idx !== currentIndex;
+
+        let style: React.CSSProperties = {
+          position: 'absolute',
+          inset: 0,
+          width: '100%',
+          height: '100%',
+          objectFit: 'contain',
+          opacity: isActive || isExiting ? 1 : 0, // Keep exiting item visible
+          zIndex: isActive ? 10 : (isExiting ? 5 : 0),
+          pointerEvents: 'none',
+          // Only transition active and exiting items to avoiding "flying" artifacts for others
+          transition: (isActive || isExiting) ? `all ${transitionDuration}ms ease-in-out` : 'none',
+        };
+
+        if (globalTransition === 'slide-left') {
+          // Slide Left: Enter from Right (100%), Leave to Left (-100%)
+          let translateX = '100%'; // Default: Staged on Right
+          if (isActive) translateX = '0%';
+          if (isExiting) translateX = '-100%';
+
+          style = {
+            ...style,
+            transform: `translateX(${translateX})`,
+          }
+        } else if (globalTransition === 'slide-right') {
+          // Slide Right: Enter from Left (-100%), Leave to Right (100%)
+          let translateX = '-100%'; // Default: Staged on Left
+          if (isActive) translateX = '0%';
+          if (isExiting) translateX = '100%';
+
+          style = {
+            ...style,
+            transform: `translateX(${translateX})`,
+          }
+        } else if (globalTransition === 'zoom') {
+          style = {
+            ...style,
+            transform: isActive ? 'scale(1)' : 'scale(1.1)',
+            opacity: isActive ? 1 : 0 // Zoom usually fades
+          }
+        } else {
+          // Default Fade
+          style = { ...style, transition: `opacity ${transitionDuration}ms ease-in-out`, opacity: isActive ? 1 : 0 }
+        }
+
+        return item.type === 'video' ? (
+          <PlayerVideo
+            key={`${item.id}-${idx}`}
+            item={item}
+            isActive={isActive}
+            style={style}
+            isMuted={true}
+          />
+        ) : (
+          <img
+            key={`${item.id}-${idx}`}
+            src={item.readUrl || item.url} // Handle both formats
+            style={style}
+          />
+        );
+      })}
+
+      {/* Floating Control Bar */}
+      <div className={cn(
+        "fixed bottom-8 left-1/2 -translate-x-1/2 bg-black/80 backdrop-blur-md border border-white/10 text-white rounded-full px-6 py-3 flex items-center gap-6 transition-all duration-300 z-50",
+        showControls ? "translate-y-0 opacity-100" : "translate-y-20 opacity-0"
+      )}>
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" className="text-white/70 hover:text-white rounded-full hover:bg-white/10" onClick={() => setIsPlaying(!isPlaying)}>
+            {isPlaying ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6 ml-1" />}
+          </Button>
+
+          <div className="h-8 w-px bg-white/20" />
+
+          <div className="flex flex-col">
+            <span className="text-[10px] text-white/50 uppercase tracking-wider font-bold">Timeline</span>
+            <span className="font-mono text-sm">{formatTime(globalTime)} / {formatTime(totalDuration)}</span>
+          </div>
         </div>
 
-        {/* Controls Overlay */}
-        {showControls && (
+        {backgroundMusic && (
           <>
-            {/* Logo */}
-            <div className="absolute top-6 left-6">
-              <TapeLogo width={80} />
-            </div>
-
-            {/* Controls */}
-            <div className="absolute top-6 right-6 flex items-center gap-4 bg-black/50 backdrop-blur-sm rounded-lg p-3">
-              <div className="flex items-center gap-2">
-                <Sun className="w-5 h-5 text-white" />
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={brightness}
-                  onChange={(e) => setBrightness(Number(e.target.value))}
-                  className="w-24"
-                />
+            <div className="h-8 w-px bg-white/20" />
+            <div className="flex items-center gap-3">
+              <div className={cn("p-1.5 rounded-full", isPlaying ? "bg-green-500/20 text-green-400" : "bg-white/10 text-white/40")}>
+                <Music className={cn("w-4 h-4", isPlaying && "animate-pulse")} />
               </div>
-
-              <div className="flex items-center gap-2">
-                <Volume2 className="w-5 h-5 text-white" />
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={volume}
-                  onChange={(e) => setVolume(Number(e.target.value))}
-                  className="w-24"
-                />
+              <div className="max-w-[100px] truncate hidden md:block">
+                <p className="text-xs font-medium">Background Music</p>
+                <p className="text-[10px] text-white/50">Active</p>
               </div>
-
-              <button
-                onClick={() => setViewState('connected')}
-                className="p-2 hover:bg-white/20 rounded-lg transition-colors"
-                title="Exit to menu"
-              >
-                <X className="w-5 h-5 text-white" />
-              </button>
             </div>
           </>
         )}
 
-        {/* Background Music */}
-        {backgroundMusic && (
-          <audio
-            ref={audioRef}
-            src={backgroundMusic}
-            autoPlay
-            loop
-            className="hidden"
-          />
-        )}
-      </div>
-    );
-  }
+        <div className="h-8 w-px bg-white/20" />
 
-  // No content state
-  return (
-    <div className="h-screen flex items-center justify-center bg-gray-50">
-      <div className="text-center">
-        <Monitor className="w-16 h-16 mx-auto mb-4 text-gray-400" />
-        <p className="text-2xl font-bold text-gray-700">Device Connected</p>
-        <p className="text-gray-500 mb-6">No content assigned</p>
-        <Button onClick={() => setViewState('connected')}>
-          Back to Menu
+        <Button variant="ghost" size="icon" className="text-white/70 hover:text-white hover:bg-white/10 rounded-full" onClick={() => setViewState('connected')}>
+          <X className="w-5 h-5" />
         </Button>
       </div>
+
+      {/* Audio Element */}
+      {backgroundMusic && <audio ref={audioRef} src={backgroundMusic} loop />}
+
+      {/* Progress Bar (Top) */}
+      <div className="absolute top-0 left-0 right-0 h-1 bg-white/10 z-50">
+        <div className="h-full bg-blue-500 transition-all duration-100 ease-linear shadow-[0_0_10px_rgba(59,130,246,0.8)]"
+          style={{ width: `${(globalTime / totalDuration) * 100}%` }}
+        />
+      </div>
     </div>
+  );
+}
+
+// Helper Component for Video Reliability
+function PlayerVideo({ item, isActive, style, isMuted }: { item: any, isActive: boolean, style: any, isMuted: boolean }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    if (isActive && videoRef.current) {
+      videoRef.current.currentTime = 0;
+      const playPromise = videoRef.current.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(error => {
+          console.warn("Auto-play prevented:", error);
+        });
+      }
+    } else if (!isActive && videoRef.current) {
+      videoRef.current.pause();
+    }
+  }, [isActive]);
+
+  return (
+    <video
+      ref={videoRef}
+      src={item.readUrl || item.url}
+      style={style}
+      muted={isMuted}
+      playsInline
+      className="object-contain w-full h-full"
+    />
   );
 }

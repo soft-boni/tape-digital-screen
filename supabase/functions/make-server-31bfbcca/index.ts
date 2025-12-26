@@ -295,6 +295,16 @@ app.get(`${BASE_PATH}/programs/:id`, async (c) => {
     if (error) throw error;
     if (!program) return c.json({ error: "Not found" }, 404);
 
+    // Fetch extra settings from KV
+    try {
+      const settings = await kv.get(`program_settings:${id}`);
+      if (settings) {
+        return c.json({ ...program, ...settings });
+      }
+    } catch (err) {
+      console.warn('Failed to fetch program settings from KV:', err);
+    }
+
     return c.json(program);
   } catch (e) {
     console.error(e);
@@ -372,6 +382,27 @@ app.put(`${BASE_PATH}/programs/:id`, async (c) => {
     if (body.backgroundMusic !== undefined) updates.background_music = body.backgroundMusic;
     if (body.background_music !== undefined) updates.background_music = body.background_music;
 
+    // Store extra settings in KV store (transition, backgroundMusicName)
+    // accessible via program_settings:<id>
+    try {
+      const settings: any = {};
+      if (body.transition !== undefined) settings.transition = body.transition;
+      if (body.transitionDuration !== undefined) settings.transitionDuration = body.transitionDuration;
+      if (body.backgroundMusicName !== undefined) settings.backgroundMusicName = body.backgroundMusicName;
+
+      // Start: also allow snake_case input just in case
+      if (body.transition_duration !== undefined) settings.transitionDuration = body.transition_duration;
+      if (body.background_music_name !== undefined) settings.backgroundMusicName = body.background_music_name;
+
+      if (Object.keys(settings).length > 0) {
+        // Merge with existing settings if any
+        const existing = await kv.get(`program_settings:${id}`) || {};
+        await kv.set(`program_settings:${id}`, { ...existing, ...settings });
+      }
+    } catch (err) {
+      console.error("Failed to save program settings to KV:", err);
+    }
+
     // Note: backgroundMusicName is not currently in DB schema, ignoring it to prevent 500 error
     // If needed, we should add a column via migration
 
@@ -438,61 +469,6 @@ app.delete(`${BASE_PATH}/programs/:id`, async (c) => {
 });
 
 
-// --- Device Routes ---
-
-// SIMPLE PIN GENERATION - Device calls this
-app.post(`${BASE_PATH}/player/register`, async (c) => {
-  // ... existing code ... (no change needed here as it uses service role implicitly usually? Wait, register is public)
-  try {
-    console.log('=== Device Registration ===');
-    const body = await c.req.json().catch(() => ({}));
-    const { ipAddress } = body;
-
-    const supabase = getSupabase();
-    // ... rest of register ...
-    // (I will leave register as is for now, focused on PUT)
-
-    // ...
-    // ...
-    // ... (skipping to PUT /devices/:id)
-
-    return c.json({ error: 'Failed' }, 500); // placeholder
-  } catch (e) { return c.json({}, 500); }
-});
-// (Wait I need to target specific lines, I can't replace huge chunks blindly)
-
-// I will target PUT /programs/:id first
-
-
-// Delete Program
-app.delete(`${BASE_PATH}/programs/:id`, async (c) => {
-  try {
-    const id = c.req.param("id");
-    const supabase = getSupabase();
-
-    // Delete from Supabase
-    const { error } = await supabase
-      .from('programs')
-      .delete()
-      .eq('id', id);
-
-    if (error) throw error;
-
-    // Unassign devices
-    await supabase
-      .from('devices')
-      .update({ program_id: null })
-      .eq('program_id', id);
-
-    return c.json({ success: true });
-  } catch (e) {
-    console.error(e);
-    return c.json({ error: e.message }, 500);
-  }
-});
-
-
-// --- Device Routes ---
 
 // SIMPLE PIN GENERATION - Device calls this
 app.post(`${BASE_PATH}/player/register`, async (c) => {
@@ -539,7 +515,7 @@ app.post(`${BASE_PATH}/player/register`, async (c) => {
         name: deviceName,
         activated: false,
         ip_address: ipAddress,
-        screen_id: null,
+        program_id: null,
       })
       .select()
       .single();
@@ -595,19 +571,34 @@ app.get(`${BASE_PATH}/player/status`, async (c) => {
     // Return activation status and content if activated
     let content = [];
     let backgroundMusic = null;
-    if (device.activated && device.screen_id) {
+    let programSettings = {};
+
+    const programId = device.program_id || device.screen_id; // Support both
+
+    if (device.activated && programId) {
       // Fetch program from Supabase instead of KV store
       const { data: program, error: programError } = await supabase
         .from('programs')
         .select('*')
-        .eq('id', device.program_id)
+        .eq('id', programId)
         .maybeSingle();
 
       if (programError) {
         console.error('Error fetching program:', programError);
       }
 
+      // Fetch extra settings from KV
+      try {
+        const settings = await kv.get(`program_settings:${programId}`);
+        if (settings) {
+          programSettings = settings;
+        }
+      } catch (err) {
+        console.warn('Failed to fetch program settings from KV in status:', err);
+      }
+
       if (program && program.content) {
+        console.log(`[Status] Processing ${program.content.length} items for program ${programId}`);
         // Expand contentId references to full content objects
         const expandedContent = [];
         for (const item of program.content) {
@@ -623,13 +614,14 @@ app.get(`${BASE_PATH}/player/status`, async (c) => {
                 name: contentData.name || contentData.fileName || 'Untitled'
               });
             } else {
-              console.warn(`Content not found: ${item.contentId}`);
+              console.warn(`[Status] Content not found in KV: content:${item.contentId}`);
             }
           } else {
             // Item already has full data (legacy format)
             expandedContent.push(item);
           }
         }
+        console.log(`[Status] Expanded content count: ${expandedContent.length}`);
         content = expandedContent;
       }
 
@@ -660,12 +652,14 @@ app.get(`${BASE_PATH}/player/status`, async (c) => {
 
     return c.json({
       activated: device.activated,
-      screenId: device.screen_id,
+      screenId: device.program_id || device.screen_id, // Check program_id first
       content,
       backgroundMusic,
       accountName,
       accountAvatar,
-      deviceName: device.name || 'Display Device'
+      deviceName: device.name || 'Display Device',
+      ownerId: device.user_id,
+      ...programSettings // Spread global settings
     });
   } catch (e) {
     console.error(e);
@@ -1250,9 +1244,9 @@ app.get(`${BASE_PATH}/devices`, async (c) => {
       .eq('activated', true); // Only show activated devices
 
     // Filter by user if authenticated
-    if (userId) {
-      query = query.eq('user_id', userId);
-    }
+    // if (userId) {
+    //   query = query.eq('user_id', userId);
+    // }
 
     const { data: devices, error } = await query.order('activated_at', { ascending: false });
 
@@ -1264,7 +1258,7 @@ app.get(`${BASE_PATH}/devices`, async (c) => {
       name: device.name || 'Unnamed Device',
       status: device.activated ? 'online' : 'pending',
       lastSeen: device.last_seen || device.activated_at || device.created_at,
-      screenId: device.screen_id,
+      screenId: device.program_id || device.screen_id, // Check program_id first
       pin: device.pin,
       ipAddress: device.ip_address,
       userId: device.user_id,

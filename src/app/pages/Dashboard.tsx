@@ -7,6 +7,7 @@ import { Monitor, Smartphone, Activity, Library } from "lucide-react";
 export function Dashboard() {
   const [stats, setStats] = useState({
     screensCount: 0,
+    programsCount: 0,
     devicesCount: 0,
     onlineDevicesCount: 0,
     contentCount: 0,
@@ -31,7 +32,7 @@ export function Dashboard() {
   const statCards = [
     {
       title: "Total Programs",
-      value: stats.screensCount,
+      value: stats.programsCount || stats.screensCount || 0,
       icon: Monitor,
       color: "text-blue-600",
       bg: "bg-blue-100",

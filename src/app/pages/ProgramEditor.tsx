@@ -1,4 +1,4 @@
-
+﻿
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams } from "react-router-dom";
 import { DndProvider, useDrag, useDrop } from "react-dnd";
@@ -8,16 +8,18 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
-import { Play, Pause, SkipBack, SkipForward, Plus, Trash2, GripVertical, Save, Monitor, X } from "lucide-react";
+import { Play, Pause, SkipBack, SkipForward, Plus, Trash2, GripVertical, Save, Monitor, X, Clock, Volume2, Music, Check, ChevronRight, ChevronLeft } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { toast } from "sonner";
+import { cn } from "../components/ui/utils";
 
 // --- Draggable Item Component ---
-const DraggableItem = ({ item, index, moveItem, removeItem, updateDuration, updateTransition, updateTransitionDuration, updateVolume, contentDetails }: any) => {
+const DraggableItem = ({ item, index, moveItem, removeItem, updateDuration, updateVolume, contentDetails }: any) => {
   const ref = useRef<HTMLDivElement>(null);
 
-  const [{ isDragging }, drag] = useDrag({
+  const [{ isDragging }, drag, preview] = useDrag({
     type: "CONTENT",
     item: { index },
     collect: (monitor) => ({
@@ -35,7 +37,8 @@ const DraggableItem = ({ item, index, moveItem, removeItem, updateDuration, upda
     },
   });
 
-  drag(drop(ref));
+  // Attach drop and preview to the main container
+  preview(drop(ref));
 
   const details = contentDetails.find((c: any) => c.id === item.contentId);
   if (!details) return null;
@@ -43,273 +46,362 @@ const DraggableItem = ({ item, index, moveItem, removeItem, updateDuration, upda
   return (
     <div
       ref={ref}
-      className={`flex items-start gap-3 p-4 bg-white border rounded-lg mb-3 shadow-sm transition-shadow hover:shadow-md ${isDragging ? "opacity-50" : "opacity-100"
-        }`}
+      className={cn(
+        "flex items-center gap-3 p-3 bg-white border rounded-lg mb-2 shadow-sm transition-all hover:shadow-md",
+        isDragging ? "opacity-50 scale-95" : "opacity-100"
+      )}
     >
-      <div className="cursor-move text-slate-400 hover:text-slate-600 pt-1">
+      <div ref={(node) => { drag(node) }} className="cursor-move text-slate-400 hover:text-slate-600 p-1">
         <GripVertical className="w-5 h-5" />
       </div>
-      <div className="w-16 h-16 bg-slate-100 rounded-lg overflow-hidden flex-shrink-0 border">
+
+      {/* Thumbnail */}
+      <div className="relative w-16 h-16 bg-slate-100 rounded-lg overflow-hidden flex-shrink-0 border">
         {details.type === "image" ? (
           <img src={details.readUrl} className="w-full h-full object-cover" />
         ) : (
           <video src={details.readUrl} className="w-full h-full object-cover" />
         )}
+        <div className="absolute inset-x-0 bottom-0 bg-black/60 text-white text-[10px] px-1 py-0.5 truncate text-center">
+          {index + 1}
+        </div>
       </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-start justify-between mb-3">
-          <div className="flex-1 min-w-0">
-            <p className="font-semibold text-sm truncate">{details.name}</p>
-            <p className="text-xs text-muted-foreground uppercase mt-0.5">{details.type}</p>
-          </div>
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:bg-red-50 -mt-1" onClick={() => removeItem(index)}>
-            <Trash2 className="w-4 h-4" />
-          </Button>
+
+      {/* Info & Duration */}
+      <div className="flex-1 min-w-0 grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+        <div className="min-w-0">
+          <p className="font-semibold text-sm truncate" title={details.name}>{details.name}</p>
+          <p className="text-xs text-muted-foreground uppercase">{details.type}</p>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          {/* Duration Control */}
-          <div className="bg-slate-50 border rounded-lg p-3">
-            <label className="text-xs font-medium text-slate-700 mb-2 block">Duration</label>
-            <div className="flex items-center gap-2">
-              <Input
-                type="number"
-                className="flex-1 h-8 text-center"
-                value={item.duration}
-                onChange={(e) => updateDuration(index, parseInt(e.target.value) || 5)}
-                min={1}
-              />
-              <span className="text-xs text-muted-foreground whitespace-nowrap">sec</span>
-            </div>
+        <div className="flex items-center gap-4">
+          {/* Duration */}
+          <div className="flex items-center gap-2 bg-slate-50 px-2 py-1 rounded border">
+            <Clock className="w-3.5 h-3.5 text-slate-500" />
+            <Input
+              type="number"
+              className="w-12 h-6 text-center p-0 text-sm border-0 bg-transparent focus-visible:ring-0"
+              value={item.duration}
+              onChange={(e) => updateDuration(index, parseInt(e.target.value) || 5)}
+              min={1}
+            />
+            <span className="text-xs text-muted-foreground">s</span>
           </div>
 
-          {/* Transition Controls */}
-          <div className="bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-200 rounded-lg p-3">
-            <label className="text-xs font-medium text-indigo-900 mb-2 block">Transition</label>
-            <select
-              className="w-full text-xs border border-indigo-200 rounded-md px-2 py-1.5 bg-white mb-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-              value={item.transition || 'fade'}
-              onChange={(e) => updateTransition(index, e.target.value)}
-            >
-              <option value="none">⚡ None</option>
-              <option value="fade">✨ Fade</option>
-              <option value="slide">➡️ Slide</option>
-              <option value="zoom">🔍 Zoom</option>
-            </select>
-            {item.transition !== 'none' && (
-              <div className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-indigo-700">Speed</span>
-                  <span className="text-xs font-medium text-indigo-900">{item.transitionDuration || 500}ms</span>
-                </div>
-                <input
-                  type="range"
-                  min="100"
-                  max="2000"
-                  step="100"
-                  value={item.transitionDuration || 500}
-                  onChange={(e) => updateTransitionDuration(index, parseInt(e.target.value))}
-                  className="w-full h-1.5 bg-indigo-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
-                />
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Volume Control (for videos only) */}
-        {details.type === 'video' && (
-          <div className="bg-slate-50 border rounded-lg p-3 mt-3">
-            <label className="text-xs font-medium text-slate-700 mb-2 block">Video Volume</label>
-            <div className="flex items-center gap-3">
+          {/* Volume (Video Only) */}
+          {details.type === 'video' && (
+            <div className="flex items-center gap-2 flex-1 min-w-[80px]">
+              <Volume2 className="w-3.5 h-3.5 text-slate-500" />
               <input
                 type="range"
                 min="0"
                 max="100"
+                step="10"
                 value={item.volume ?? 100}
                 onChange={(e) => updateVolume(index, parseInt(e.target.value))}
-                className="flex-1 h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-slate-600"
               />
-              <span className="text-xs font-medium text-slate-700 w-10 text-right">{item.volume ?? 100}%</span>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
+
+      <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-red-500 hover:bg-red-50" onClick={() => removeItem(index)}>
+        <Trash2 className="w-4 h-4" />
+      </Button>
     </div>
   );
 };
 
 
-// --- Preview Player Component ---
-const PreviewPlayer = ({ playlist, contentDetails, backgroundMusic }: any) => {
-  const [currentIndex, setCurrentIndex] = useState(0);
+// --- Global Preview Player Component ---
+const PreviewPlayer = ({ playlist, contentDetails, backgroundMusic, globalTransition, transitionDuration = 500 }: any) => {
+  const [globalTime, setGlobalTime] = useState(0); // in milliseconds
   const [isPlaying, setIsPlaying] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [isTransitioning, setIsTransitioning] = useState(false);
-  const [volume, setVolume] = useState(50);
-  const timerRef = useRef<any>(null);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const requestRef = useRef<number | undefined>(undefined);
+  const lastTimeRef = useRef<number | undefined>(undefined);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const prevIndexRef = useRef<number>(0);
 
-  const currentItem = playlist[currentIndex];
-  const currentDetails = currentItem
-    ? contentDetails.find((c: any) => c.id === currentItem.contentId)
-    : null;
+  // Update prevIndexRef
+  useEffect(() => {
+    prevIndexRef.current = currentIndex;
+  }, [currentIndex]);
 
-  const handleNext = useCallback(() => {
-    const transition = currentItem?.transition || 'fade';
-    const duration = currentItem?.transitionDuration || 500;
+  // Calculate total playlist duration
+  const totalDuration = playlist.reduce((acc: number, item: any) => acc + (item.duration * 1000), 0) || 0;
 
-    if (transition !== 'none') {
-      setIsTransitioning(true);
-      setTimeout(() => {
-        setCurrentIndex((prev) => (prev + 1) % playlist.length);
-        setProgress(0);
-        setTimeout(() => setIsTransitioning(false), duration / 2);
-      }, duration / 2);
-    } else {
-      setCurrentIndex((prev) => (prev + 1) % playlist.length);
-      setProgress(0);
+  // Sync Audio Playback
+  useEffect(() => {
+    if (audioRef.current) {
+      if (isPlaying && totalDuration > 0) {
+        audioRef.current.play().catch(() => { });
+      } else {
+        audioRef.current.pause();
+      }
     }
-  }, [playlist.length, currentItem]);
+  }, [isPlaying, totalDuration, backgroundMusic]);
 
-  const handlePrev = () => {
-    const transition = currentItem?.transition || 'fade';
-    const duration = currentItem?.transitionDuration || 500;
-
-    if (transition !== 'none') {
-      setIsTransitioning(true);
-      setTimeout(() => {
-        setCurrentIndex((prev) => (prev - 1 + playlist.length) % playlist.length);
-        setProgress(0);
-        setTimeout(() => setIsTransitioning(false), duration / 2);
-      }, duration / 2);
-    } else {
-      setCurrentIndex((prev) => (prev - 1 + playlist.length) % playlist.length);
-      setProgress(0);
+  // Main Animation Loop
+  const animate = (time: number) => {
+    if (lastTimeRef.current !== undefined) {
+      const deltaTime = time - lastTimeRef.current;
+      setGlobalTime((prevTime) => {
+        let newTime = prevTime + deltaTime;
+        if (newTime >= totalDuration) {
+          newTime = newTime % totalDuration; // Loop
+        }
+        return newTime;
+      });
     }
+    lastTimeRef.current = time;
+    requestRef.current = requestAnimationFrame(animate);
   };
 
   useEffect(() => {
-    if (isPlaying && currentItem) {
-      const duration = currentItem.duration * 1000;
-      const interval = 100;
-
-      timerRef.current = setInterval(() => {
-        setProgress((prev) => {
-          const next = prev + (interval / duration) * 100;
-          if (next >= 100) {
-            handleNext();
-            return 0;
-          }
-          return next;
-        });
-      }, interval);
+    if (isPlaying && totalDuration > 0) {
+      requestRef.current = requestAnimationFrame(animate);
+    } else {
+      lastTimeRef.current = undefined;
+      if (requestRef.current) cancelAnimationFrame(requestRef.current);
     }
-    return () => clearInterval(timerRef.current);
-  }, [isPlaying, currentItem, handleNext]);
+    return () => {
+      if (requestRef.current) cancelAnimationFrame(requestRef.current);
+    };
+  }, [isPlaying, totalDuration]);
 
-  // Update audio volume
+  // Determine Current Item based on Global Time
   useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.volume = volume / 100;
-    }
-  }, [volume]);
+    let accumulatedTime = 0;
+    let foundIndex = 0;
 
-  if (!playlist.length || !currentDetails) {
+    for (let i = 0; i < playlist.length; i++) {
+      const itemDuration = playlist[i].duration * 1000;
+      if (globalTime >= accumulatedTime && globalTime < accumulatedTime + itemDuration) {
+        foundIndex = i;
+        break;
+      }
+      accumulatedTime += itemDuration;
+    }
+    setCurrentIndex(foundIndex);
+  }, [globalTime, playlist]);
+
+  // Handle Play/Pause
+  const togglePlay = () => setIsPlaying(!isPlaying);
+
+  // Reset if playlist empty
+  useEffect(() => {
+    if (playlist.length === 0) {
+      setIsPlaying(false);
+      setGlobalTime(0);
+    }
+  }, [playlist.length]);
+
+  if (!playlist.length) {
     return (
-      <div className="w-full aspect-video bg-black flex items-center justify-center text-white/50">
-        No content to preview
+      <div className="w-full aspect-video bg-black rounded-lg flex flex-col items-center justify-center text-slate-500 border border-slate-800 shadow-inner">
+        <Monitor className="w-12 h-12 mb-2 opacity-20" />
+        <p>No content to play</p>
       </div>
     );
   }
 
-  // Get transition styles
-  const transition = currentItem?.transition || 'fade';
-  const transitionDuration = currentItem?.transitionDuration || 500;
+  const currentItem = playlist[currentIndex];
+  const nextIndex = (currentIndex + 1) % playlist.length;
+  const nextItem = playlist[nextIndex];
 
-  const getTransitionStyle = () => {
-    const baseStyle = {
-      transition: `all ${transitionDuration}ms ease-in-out`,
-    };
+  const currentDetails = contentDetails.find((c: any) => c.id === currentItem.contentId);
+  const nextDetails = contentDetails.find((c: any) => c.id === nextItem.contentId);
 
-    if (!isTransitioning) return baseStyle;
-
-    switch (transition) {
-      case 'fade':
-        return { ...baseStyle, opacity: 0 };
-      case 'slide':
-        return { ...baseStyle, transform: 'translateX(-100%)' };
-      case 'zoom':
-        return { ...baseStyle, transform: 'scale(0)' };
-      default:
-        return baseStyle;
-    }
+  // format time mm:ss
+  const formatTime = (ms: number) => {
+    const s = Math.floor(ms / 1000);
+    const m = Math.floor(s / 60);
+    const rs = s % 60;
+    return `${m}:${rs.toString().padStart(2, '0')}`;
   };
+
+  // Transition Logic
+  // We need to determine if we are in the "transition window" (end of current item)
+  // But strictly, with CSS transitions, we just render the Current Item. 
+  // Custom transition logic requires rendering BOTH Current and Next during the transition period?
+  // User requested "Slide Left-Right".
+  // A simple approach for "Global Transition" is using a key-based animation engine (like Framer Motion or simple CSS keyframes).
+  // Here, we'll use a CSS-based approach triggered by `currentIndex` change.
 
   return (
     <div className="space-y-4">
-      <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden shadow-xl border border-slate-800">
-        <div style={getTransitionStyle()}>
-          {currentDetails.type === "image" ? (
-            <img src={currentDetails.readUrl} className="w-full h-full object-contain" />
-          ) : (
-            <video
-              src={currentDetails.readUrl}
-              className="w-full h-full object-contain"
-              autoPlay={isPlaying}
-              muted
-              loop={false}
-              onEnded={handleNext}
-            />
-          )}
+      {/* Screen Container */}
+      <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden shadow-2xl border border-slate-800 group">
+
+        {/* Render ALL items but control visibility/position based on CurrentIndex */}
+        {/* This allows absolute positioning for transitions */}
+        {/* Render ALL items but control visibility/position based on CurrentIndex */}
+        {/* Key changes on transition to force re-render if needed */}
+        <div key={globalTransition} className="relative w-full h-full overflow-hidden">
+          {/* 
+                Simplified Global Transition Implementation:
+                We render the current item. When index changes, we animate.
+                Actually, simpler: Just render current item with a key.
+             */}
+          {contentDetails.length > 0 && playlist.map((item: any, idx: number) => {
+            const details = contentDetails.find((c: any) => c.id === item.contentId);
+            if (!details) return null;
+
+            const isActive = idx === currentIndex;
+            // CRITICAL: Ensure an item is not both active and exiting at the same time
+            const isExiting = idx === (prevIndexRef.current ?? -1) && idx !== currentIndex;
+
+            // Basic styles
+            let style: React.CSSProperties = {
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              objectFit: 'contain',
+              opacity: isActive || isExiting ? 1 : 0,
+              zIndex: isActive ? 10 : (isExiting ? 5 : 0),
+              pointerEvents: 'none',
+              transition: (isActive || isExiting) ? `all ${transitionDuration}ms ease-in-out` : 'none',
+            };
+
+            if (globalTransition === 'slide-left') {
+              let translateX = '100%';
+              if (isActive) translateX = '0%';
+              if (isExiting) translateX = '-100%';
+              style = { ...style, transform: `translateX(${translateX})` };
+            } else if (globalTransition === 'slide-right') {
+              let translateX = '-100%';
+              if (isActive) translateX = '0%';
+              if (isExiting) translateX = '100%';
+              style = { ...style, transform: `translateX(${translateX})` };
+            } else if (globalTransition === 'zoom') {
+              style = { ...style, transform: isActive ? 'scale(1)' : 'scale(1.1)', opacity: isActive ? 1 : 0 };
+            } else {
+              style = { ...style, transition: `opacity ${transitionDuration}ms ease-in-out`, opacity: isActive ? 1 : 0 };
+            }
+
+            return details.type === 'image' ? (
+              <img key={`${item.id}-${idx}`} src={details.readUrl} style={style} />
+            ) : (
+              <PreviewVideo
+                key={`${item.id}-${idx}`}
+                src={details.readUrl}
+                style={style}
+                isActive={isActive}
+                isPlaying={isPlaying}
+              />
+            );
+          })}
         </div>
 
-        {/* Progress Bar Overlay */}
-        <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/20">
+        {/* Global Progress Bar */}
+        <div className="absolute bottom-0 left-0 right-0 h-1.5 bg-white/20">
           <div
-            className="h-full bg-red-600 transition-all duration-100 ease-linear"
-            style={{ width: `${progress}%` }}
+            className="h-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)] transition-all duration-75 ease-linear"
+            style={{ width: `${(globalTime / totalDuration) * 100}%` }}
           />
         </div>
 
-        {/* Transition Info Badge */}
-        {transition !== 'none' && (
-          <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-sm text-white text-xs px-3 py-1.5 rounded-full border border-white/20">
-            {transition === 'fade' && '✨'} {transition === 'slide' && '➡️'} {transition === 'zoom' && '🔍'}
-            <span className="ml-1.5 font-medium">{transition}</span>
-            <span className="ml-1.5 text-white/70">{transitionDuration}ms</span>
+        {/* Overlay Controls (Hover) */}
+        {!isPlaying && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-[2px] transition-opacity">
+            <Button onClick={togglePlay} size="icon" className="h-16 w-16 rounded-full bg-white/90 text-black hover:bg-white hover:scale-105 transition-all">
+              <Play className="w-8 h-8 ml-1" />
+            </Button>
           </div>
         )}
       </div>
 
-      <div className="flex items-center justify-center gap-4">
-        <Button variant="outline" size="icon" onClick={handlePrev}><SkipBack className="w-4 h-4" /></Button>
-        <Button
-          variant={isPlaying ? "secondary" : "default"}
-          size="icon"
-          className="h-12 w-12 rounded-full"
-          onClick={() => setIsPlaying(!isPlaying)}
-        >
-          {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-1" />}
-        </Button>
-        <Button variant="outline" size="icon" onClick={handleNext}><SkipForward className="w-4 h-4" /></Button>
-      </div>
-      <div className="text-center text-sm text-muted-foreground">
-        Now Playing: <span className="font-medium text-foreground">{currentDetails.name}</span>
-      </div>
+      {/* Control Bar */}
+      <div className="flex items-center justify-between px-4 py-3 bg-slate-900 text-white rounded-lg shadow-lg border border-slate-800">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" className="text-slate-400 hover:text-white" onClick={() => setCurrentIndex((currentIndex - 1 + playlist.length) % playlist.length)}>
+            <SkipBack className="w-5 h-5" />
+          </Button>
 
-      {/* Background Music */}
-      {backgroundMusic && (
-        <audio
-          ref={audioRef}
-          src={backgroundMusic}
-          autoPlay={isPlaying}
-          loop
-          className="hidden"
-        />
-      )}
+          <Button variant="ghost" size="icon" className={cn("rounded-full", isPlaying ? "text-blue-400 bg-blue-500/10" : "text-white")} onClick={togglePlay}>
+            {isPlaying ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6 ml-1" />}
+          </Button>
+
+          <Button variant="ghost" size="icon" className="text-slate-400 hover:text-white" onClick={() => setCurrentIndex((currentIndex + 1) % playlist.length)}>
+            <SkipForward className="w-5 h-5" />
+          </Button>
+
+          <div className="h-8 w-px bg-slate-700 mx-2" />
+
+          <div className="flex flex-col">
+            <span className="text-xs text-slate-400 uppercase tracking-wider font-semibold">Time</span>
+            <span className="font-mono text-sm leading-none">{formatTime(globalTime)} <span className="text-slate-500">/ {formatTime(totalDuration)}</span></span>
+          </div>
+        </div>
+
+        {/* Right Side: Music Indicator */}
+        {backgroundMusic && (
+          <div className="flex items-center gap-3 bg-slate-800 px-3 py-1.5 rounded-full border border-slate-700">
+            <Music className="w-3.5 h-3.5 text-blue-400 animate-pulse" />
+            <div className="flex flex-col">
+              <span className="text-[10px] text-slate-400 leading-none">Music Active</span>
+              {/* We might not know the name here unless we pass it */}
+            </div>
+            {/* Hidden Audio Element */}
+            <audio ref={audioRef} src={backgroundMusic} loop />
+          </div>
+        )}
+      </div>
     </div>
   );
 };
+
+
+// --- Audio Picker Component ---
+// --- Audio Picker Component ---
+const AudioPicker = ({ open, onOpenChange, onSelect, allContent }: any) => {
+  // Strict filter for audio type only as requested
+  const audioContent = allContent.filter((c: any) => c.type === 'audio');
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle>Select Background Music</DialogTitle>
+        </DialogHeader>
+        <div className="flex-1 overflow-y-auto min-h-[300px] p-2">
+          {audioContent.length === 0 ? (
+            <div className="text-center py-10 text-muted-foreground">
+              <Music className="w-12 h-12 mx-auto mb-2 opacity-20" />
+              <p>No audio content found.</p>
+              <p className="text-xs">Upload .mp3 files in the Content Library first.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-2">
+              {audioContent.map((c: any) => (
+                <div key={c.id}
+                  className="flex items-center gap-4 p-3 border rounded-lg hover:bg-slate-50 cursor-pointer transition-colors"
+                  onClick={() => onSelect(c)}
+                >
+                  <div className="w-10 h-10 bg-indigo-100 rounded flex items-center justify-center text-indigo-600">
+                    <Music className="w-5 h-5" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-medium text-sm">{c.name}</p>
+                    <div className="flex gap-2 text-xs text-muted-foreground">
+                      <span className="capitalize">{c.type}</span>
+                      {c.size && <span>• {Math.round(c.size / 1024 / 1024 * 100) / 100} MB</span>}
+                    </div>
+                  </div>
+                  <Button size="icon" variant="ghost"><Plus className="w-4 h-4" /></Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
 
 
 // --- Main Editor Component ---
@@ -320,16 +412,20 @@ export function ScreenEditor() {
   const [allDevices, setAllDevices] = useState<any[]>([]);
   const [assignedDevices, setAssignedDevices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [playlist, setPlaylist] = useState<any[]>([]); // Local state for drag/drop
+  const [playlist, setPlaylist] = useState<any[]>([]);
   const [isAddContentOpen, setIsAddContentOpen] = useState(false);
   const [isAddDeviceOpen, setIsAddDeviceOpen] = useState(false);
-  const [deviceMode, setDeviceMode] = useState<"existing" | "new">("existing"); // Toggle between add modes
+  const [isMusicPickerOpen, setIsMusicPickerOpen] = useState(false);
+
+  const [deviceMode, setDeviceMode] = useState<"existing" | "new">("existing");
   const [newDeviceName, setNewDeviceName] = useState("");
   const [newDevicePin, setNewDevicePin] = useState("");
-  const [backgroundMusic, setBackgroundMusic] = useState<string | null>(null); // Background music URL
-  const [backgroundMusicName, setBackgroundMusicName] = useState<string | null>(null); // Background music filename
-  const [uploadingMusic, setUploadingMusic] = useState(false);
-  const musicInputRef = useRef<HTMLInputElement>(null);
+
+  // Global Settings State
+  const [backgroundMusic, setBackgroundMusic] = useState<string | null>(null);
+  const [backgroundMusicName, setBackgroundMusicName] = useState<string | null>(null);
+  const [globalTransition, setGlobalTransition] = useState<string>("fade");
+  const [transitionDuration, setTransitionDuration] = useState<number>(500);
 
   useEffect(() => {
     loadData();
@@ -347,13 +443,15 @@ export function ScreenEditor() {
       setAllDevices(dData);
       setPlaylist(sData.content || []);
 
-      // Load background music if exists
-      if (sData.backgroundMusic) {
-        setBackgroundMusic(sData.backgroundMusic);
-        setBackgroundMusicName(sData.backgroundMusicName || 'Background Music');
+      if (sData.backgroundMusic || sData.background_music) {
+        setBackgroundMusic(sData.backgroundMusic || sData.background_music);
+        setBackgroundMusicName(sData.backgroundMusicName || sData.background_music_name || 'Background Music');
       }
 
-      // Filter devices assigned to this screen
+      // Load Transition Settings
+      if (sData.transition) setGlobalTransition(sData.transition);
+      if (sData.transitionDuration) setTransitionDuration(sData.transitionDuration);
+
       const assigned = dData.filter((d: any) => d.screenId === id);
       setAssignedDevices(assigned);
     } catch (error) {
@@ -370,7 +468,12 @@ export function ScreenEditor() {
         content: playlist,
         backgroundMusic,
         backgroundMusicName,
+        background_music: backgroundMusic,
+        transition: globalTransition, // Saving global transition
+        transitionDuration,
       };
+
+      // Ensure we explicitly send these fields even if not in original type (backend needs to support or ignore)
       await apiFetch(`/programs/${id}`, {
         method: "PUT",
         body: JSON.stringify(updatedScreen),
@@ -384,34 +487,18 @@ export function ScreenEditor() {
 
   const handleDeleteScreen = async () => {
     if (!screen) return;
-
-    // Confirmation dialog
-    const confirmMessage = `Are you sure you want to delete "${screen.name}"?\n\nThis action cannot be undone. All content assignments and settings will be lost.`;
-
-    if (!confirm(confirmMessage)) return;
-
-    // Double confirmation for safety
-    const doubleConfirm = prompt(
-      `Type "${screen.name}" to confirm deletion:`
-    );
-
-    if (doubleConfirm !== screen.name) {
-      toast.error("Program name doesn't match. Deletion cancelled.");
-      return;
-    }
+    if (!confirm(`Delete "${screen.name}"?`)) return;
 
     try {
-      await apiFetch(`/programs/${screen.id}`, {
-        method: "DELETE"
-      });
-      toast.success("Program deleted successfully");
-      // Navigate back to screens list
+      await apiFetch(`/programs/${screen.id}`, { method: "DELETE" });
+      toast.success("Program deleted");
       window.location.href = "/programs";
     } catch (error) {
       toast.error("Failed to delete screen");
     }
   };
 
+  // Playlist Management
   const moveItem = useCallback((fromIndex: number, toIndex: number) => {
     setPlaylist((prev) => {
       const updated = [...prev];
@@ -429,22 +516,6 @@ export function ScreenEditor() {
     });
   };
 
-  const updateTransition = (index: number, transition: string) => {
-    setPlaylist(prev => {
-      const updated = [...prev];
-      updated[index] = { ...updated[index], transition };
-      return updated;
-    });
-  };
-
-  const updateTransitionDuration = (index: number, transitionDuration: number) => {
-    setPlaylist(prev => {
-      const updated = [...prev];
-      updated[index] = { ...updated[index], transitionDuration };
-      return updated;
-    });
-  };
-
   const updateVolume = (index: number, volume: number) => {
     setPlaylist(prev => {
       const updated = [...prev];
@@ -457,75 +528,35 @@ export function ScreenEditor() {
     setPlaylist(prev => prev.filter((_, i) => i !== index));
   };
 
-  const handleMusicUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    // Validate audio file
-    if (!file.type.startsWith("audio/")) {
-      toast.error("Please select an audio file (MP3, WAV, etc.)");
-      return;
-    }
-
-    setUploadingMusic(true);
-    const toastId = toast.loading("Uploading background music...");
-
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("upload_preset", "digital_signage_unsigned");
-
-      const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
-
-      const uploadResponse = await fetch(
-        `https://api.cloudinary.com/v1_1/${cloudName}/video/upload`,
-        {
-          method: "POST",
-          body: formData,
-        }
-      );
-
-      if (!uploadResponse.ok) {
-        const error = await uploadResponse.json();
-        throw new Error(error.error?.message || "Upload failed");
-      }
-
-      const cloudinaryData = await uploadResponse.json();
-      setBackgroundMusic(cloudinaryData.secure_url);
-      setBackgroundMusicName(file.name);
-      toast.success("Music uploaded! Don't forget to save changes.", { id: toastId });
-    } catch (error: any) {
-      console.error(error);
-      toast.error(error.message || "Upload failed", { id: toastId });
-    } finally {
-      setUploadingMusic(false);
-      if (musicInputRef.current) musicInputRef.current.value = "";
-    }
-  };
-
   const addContentToPlaylist = (contentId: string) => {
     setPlaylist(prev => [
       ...prev,
       {
         contentId,
         duration: 10,
-        order: prev.length,
-        transition: 'fade',
-        transitionDuration: 500,
         volume: 100
+        // No per-item transition anymore
       }
     ]);
     toast.success("Added to timeline");
   };
 
-  // Device management functions
+  // Music Selection
+  const handleMusicSelect = (content: any) => {
+    setBackgroundMusic(content.readUrl);
+    setBackgroundMusicName(content.name);
+    setIsMusicPickerOpen(false);
+    toast.success(`Selected "${content.name}"`);
+  };
+
+  // Device Management (Existing Logic Kept)
   const assignExistingDevice = async (deviceId: string) => {
     try {
       await apiFetch(`/devices/${deviceId}`, {
         method: "PUT",
         body: JSON.stringify({ screenId: id }),
       });
-      toast.success("Device assigned to screen");
+      toast.success("Device assigned");
       loadData();
       setIsAddDeviceOpen(false);
     } catch (error) {
@@ -536,12 +567,10 @@ export function ScreenEditor() {
   const createNewDevice = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      // Use the claim endpoint to add a new device
       await apiFetch("/devices/claim", {
         method: "POST",
         body: JSON.stringify({ pin: newDevicePin, name: newDeviceName }),
       });
-      // Then assign it to this screen
       const devices = await apiFetch("/devices");
       const newDevice = devices.find((d: any) => d.name === newDeviceName);
       if (newDevice) {
@@ -566,69 +595,79 @@ export function ScreenEditor() {
         method: "PUT",
         body: JSON.stringify({ screenId: null }),
       });
-      toast.success("Device removed from screen");
+      toast.success("Device removed");
       loadData();
     } catch (error) {
       toast.error("Failed to remove device");
     }
   };
 
-  if (loading) return <div>Loading...</div>;
+  if (loading) return <div className="flex h-screen items-center justify-center"><div className="animate-pulse">Loading Program...</div></div>;
 
   return (
     <DndProvider backend={HTML5Backend}>
       <div className="h-[calc(100vh-100px)] flex flex-col gap-4">
-        <div className="flex items-center justify-between pb-4 border-b">
+        {/* Header */}
+        <div className="flex items-center justify-between pb-4 border-b bg-white/50 backdrop-blur-sm sticky top-0 z-10 p-2">
           <div>
-            <h1 className="text-2xl font-bold">{screen.name}</h1>
-            <p className="text-sm text-muted-foreground">{screen.resolution}</p>
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <Button variant="ghost" size="icon" onClick={() => window.location.href = "/programs"} className="mr-2">
+                <ChevronLeft className="w-6 h-6" />
+              </Button>
+              <Monitor className="w-6 h-6 text-blue-600" />
+              {screen.name}
+            </h1>
+            <p className="text-sm text-muted-foreground ml-12">ID: {screen.id}</p>
           </div>
-          <Button onClick={saveChanges}>
-            <Save className="w-4 h-4 mr-2" />
-            Save Changes
-          </Button>
+          <div className="flex gap-2">
+            <Button onClick={saveChanges} className="bg-blue-600 hover:bg-blue-700">
+              <Save className="w-4 h-4 mr-2" />
+              Save Changes
+            </Button>
+          </div>
         </div>
 
-        <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-8 min-h-0">
-          {/* Left Column: Timeline & Settings */}
-          <div className="flex flex-col min-h-0">
-            <Tabs defaultValue="timeline" className="flex-1 flex flex-col min-h-0">
-              <TabsList className="w-full justify-start">
-                <TabsTrigger value="timeline">Timeline</TabsTrigger>
-                <TabsTrigger value="settings">Settings</TabsTrigger>
-              </TabsList>
+        <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-6 min-h-0">
 
-              <TabsContent value="timeline" className="flex-1 overflow-y-auto min-h-0 mt-4">
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="font-semibold">Playlist ({playlist.length})</h3>
+          {/* Left: Editor & Settings */}
+          <Card className="flex flex-col min-h-0 border-0 shadow-none bg-transparent">
+            <Tabs defaultValue="timeline" className="flex-1 flex flex-col min-h-0">
+              <div className="flex items-center justify-between mb-4">
+                <TabsList className="bg-slate-100">
+                  <TabsTrigger value="timeline">Timeline</TabsTrigger>
+                  <TabsTrigger value="settings">Settings</TabsTrigger>
+                </TabsList>
+
+                <div className="flex gap-2">
                   <Dialog open={isAddContentOpen} onOpenChange={setIsAddContentOpen}>
                     <DialogTrigger asChild>
-                      <Button size="sm" variant="secondary"><Plus className="w-4 h-4 mr-2" />Add Content</Button>
+                      <Button size="sm" variant="outline" className="border-dashed border-slate-300">
+                        <Plus className="w-4 h-4 mr-2" /> Content
+                      </Button>
                     </DialogTrigger>
-                    <DialogContent className="max-w-2xl">
+                    <DialogContent className="max-w-4xl h-[80vh]">
                       <DialogHeader><DialogTitle>Add Content to Timeline</DialogTitle></DialogHeader>
-                      <div className="grid grid-cols-3 md:grid-cols-4 gap-4 max-h-[400px] overflow-y-auto p-2">
+                      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 overflow-y-auto p-2">
                         {allContent.map(c => (
                           <div key={c.id}
-                            className="cursor-pointer group relative aspect-square bg-slate-100 rounded-md overflow-hidden border hover:ring-2 hover:ring-indigo-500"
+                            className="group relative aspect-square bg-slate-100 rounded-lg overflow-hidden cursor-pointer border hover:border-blue-500 transition-all"
                             onClick={() => addContentToPlaylist(c.id)}
                           >
-                            {c.type === "image" ? (
-                              <img src={c.readUrl} className="w-full h-full object-cover" />
-                            ) : (
-                              <video src={c.readUrl} className="w-full h-full object-cover" />
-                            )}
-                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                              <Plus className="text-white opacity-0 group-hover:opacity-100" />
+                            {c.type === "image" ? <img src={c.readUrl} className="w-full h-full object-cover" /> : <video src={c.readUrl} className="w-full h-full object-cover" />}
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                              <Plus className="text-white w-8 h-8" />
                             </div>
+                            <p className="absolute bottom-0 inset-x-0 bg-black/60 text-white text-[10px] p-1 truncate">{c.name}</p>
                           </div>
                         ))}
                       </div>
                     </DialogContent>
                   </Dialog>
                 </div>
+              </div>
 
-                <div className="space-y-2 pb-20">
+              <TabsContent value="timeline" className="flex-1 overflow-y-auto min-h-0 pr-2">
+                <div className="space-y-2 pb-10">
                   {playlist.map((item, index) => (
                     <DraggableItem
                       key={`${item.contentId}-${index}`}
@@ -637,270 +676,292 @@ export function ScreenEditor() {
                       moveItem={moveItem}
                       removeItem={removeItem}
                       updateDuration={updateDuration}
-                      updateTransition={updateTransition}
-                      updateTransitionDuration={updateTransitionDuration}
                       updateVolume={updateVolume}
                       contentDetails={allContent}
                     />
                   ))}
                   {playlist.length === 0 && (
-                    <div className="text-center py-12 border-2 border-dashed rounded-lg text-muted-foreground">
-                      Playlist is empty. Add content to start.
+                    <div className="text-center py-20 border-2 border-dashed rounded-xl text-slate-400 bg-slate-50">
+                      <Plus className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                      <p>Timeline is empty</p>
+                      <Button variant="link" onClick={() => setIsAddContentOpen(true)}>Add your first content</Button>
                     </div>
                   )}
                 </div>
               </TabsContent>
 
-              <TabsContent value="settings">
-                <Card>
-                  <CardContent className="space-y-4 pt-6">
-                    <div className="space-y-2">
-                      <Label>Program Name</Label>
-                      <Input
-                        value={screen.name}
-                        onChange={(e) => setScreen({ ...screen, name: e.target.value })}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Description</Label>
-                      <Input
-                        value={screen.description}
-                        onChange={(e) => setScreen({ ...screen, description: e.target.value })}
-                      />
-                    </div>
+              <TabsContent value="settings" className="flex-1 overflow-y-auto min-h-0">
+                <div className="space-y-6">
 
-                    {/* Device Management Section */}
-                    <div className="space-y-2 pt-4">
-                      <Label className="text-base">Assigned Devices</Label>
-                      <div className="border rounded-lg p-4 space-y-3">
-                        {assignedDevices.length > 0 ? (
-                          assignedDevices.map((device) => (
-                            <div
-                              key={device.id}
-                              className="flex items-center justify-between p-3 bg-slate-50 rounded-md"
-                            >
-                              <div className="flex items-center gap-3">
-                                <Monitor className="w-5 h-5 text-slate-600" />
-                                <div>
-                                  <p className="font-medium">{device.name}</p>
-                                  <p className="text-xs text-muted-foreground">
-                                    {device.status === "online" ? "🟢 Online" : "⚫ Offline"}
-                                  </p>
-                                </div>
-                              </div>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => removeDeviceFromScreen(device.id)}
-                                className="text-red-500 hover:text-red-600 hover:bg-red-50"
-                              >
-                                <X className="w-4 h-4" />
-                              </Button>
-                            </div>
-                          ))
-                        ) : (
-                          <p className="text-sm text-muted-foreground text-center py-4">
-                            No devices assigned to this screen
-                          </p>
-                        )}
-                        <Button
-                          variant="outline"
-                          className="w-full"
-                          onClick={() => setIsAddDeviceOpen(true)}
-                        >
-                          <Plus className="w-4 h-4 mr-2" />
-                          Add Device
-                        </Button>
+                  {/* Program Info */}
+                  <Card className="border-slate-200 shadow-sm">
+                    <CardHeader className="pb-3"><CardTitle className="text-base">General</CardTitle></CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="space-y-2">
+                        <Label>Program Name</Label>
+                        <Input value={screen.name} onChange={(e) => setScreen({ ...screen, name: e.target.value })} />
                       </div>
-                    </div>
-
-                    {/* Background Music Section */}
-                    <div className="space-y-2 pt-4 border-t">
-                      <Label className="text-base">Background Music</Label>
-                      <div className="border rounded-lg p-4 space-y-3">
-                        <p className="text-sm text-muted-foreground">
-                          Add background music that will loop during content playback
-                        </p>
-                        {backgroundMusic ? (
-                          <div className="flex items-center justify-between p-3 bg-slate-50 rounded-md">
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center">
-                                <span className="text-lg">🎵</span>
-                              </div>
-                              <div>
-                                <p className="font-medium text-sm">{backgroundMusicName || 'Background Music'}</p>
-                                <p className="text-xs text-muted-foreground">Loop playback</p>
-                              </div>
-                            </div>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => {
-                                setBackgroundMusic(null);
-                                setBackgroundMusicName(null);
-                              }}
-                              className="text-red-500 hover:text-red-600 hover:bg-red-50"
-                            >
-                              <X className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        ) : (
-                          <div className="text-center py-4 border-2 border-dashed rounded-lg">
-                            <p className="text-sm text-muted-foreground mb-2">No background music</p>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => musicInputRef.current?.click()}
-                              disabled={uploadingMusic}
-                            >
-                              <Plus className="w-4 h-4 mr-2" />
-                              {uploadingMusic ? 'Uploading...' : 'Upload Music'}
-                            </Button>
-                            <input
-                              type="file"
-                              ref={musicInputRef}
-                              className="hidden"
-                              accept="audio/*"
-                              onChange={handleMusicUpload}
-                            />
-                          </div>
-                        )}
+                      <div className="space-y-2">
+                        <Label>Description</Label>
+                        <Input value={screen.description} onChange={(e) => setScreen({ ...screen, description: e.target.value })} />
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
+                    </CardContent>
+                  </Card>
 
-                {/* Delete Screen - Danger Zone */}
-                <Card className="border-destructive mt-6">
-                  <CardHeader>
-                    <CardTitle className="text-destructive">Danger Zone</CardTitle>
-                    <p className="text-sm text-muted-foreground">
-                      Permanently delete this screen and all its settings
-                    </p>
-                  </CardHeader>
-                  <CardContent>
-                    <Button
-                      variant="destructive"
-                      onClick={handleDeleteScreen}
-                      className="w-full sm:w-auto"
-                    >
-                      <Trash2 className="w-4 h-4 mr-2" />
-                      Delete Program
-                    </Button>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-            </Tabs>
-          </div>
-
-          {/* Right Column: Preview */}
-          <div className="flex flex-col gap-4">
-            <h3 className="font-semibold">Live Preview</h3>
-            <PreviewPlayer playlist={playlist} contentDetails={allContent} backgroundMusic={backgroundMusic} />
-          </div>
-        </div>
-      </div>
-
-      {/* Add Device Modal */}
-      <Dialog open={isAddDeviceOpen} onOpenChange={setIsAddDeviceOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Add Device to Program</DialogTitle>
-          </DialogHeader>
-
-          {/* Mode Toggle */}
-          <div className="flex gap-2 p-1 bg-slate-100 rounded-lg">
-            <button
-              className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors ${deviceMode === "existing"
-                ? "bg-white shadow-sm"
-                : "text-slate-600 hover:text-slate-900"
-                }`}
-              onClick={() => setDeviceMode("existing")}
-            >
-              Add Existing
-            </button>
-            <button
-              className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors ${deviceMode === "new"
-                ? "bg-white shadow-sm"
-                : "text-slate-600 hover:text-slate-900"
-                }`}
-              onClick={() => setDeviceMode("new")}
-            >
-              Add New
-            </button>
-          </div>
-
-          {deviceMode === "existing" ? (
-            <div className="space-y-3">
-              <p className="text-sm text-muted-foreground">
-                Select an unassigned device to add to this screen:
-              </p>
-              {allDevices.filter((d) => !d.screenId).length > 0 ? (
-                <div className="max-h-[300px] overflow-y-auto space-y-2">
-                  {allDevices
-                    .filter((d) => !d.screenId)
-                    .map((device) => (
-                      <div
-                        key={device.id}
-                        className="flex items-center justify-between p-3 border rounded-lg hover:bg-slate-50 cursor-pointer"
-                        onClick={() => assignExistingDevice(device.id)}
-                      >
-                        <div className="flex items-center gap-3">
-                          <Monitor className="w-5 h-5 text-slate-600" />
-                          <div>
-                            <p className="font-medium">{device.name}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {device.status === "pending" ? "Pending" : device.status}
-                            </p>
+                  {/* Global Transitions */}
+                  <Card className="border-indigo-100 bg-indigo-50/30 shadow-sm">
+                    <CardHeader className="pb-3"><CardTitle className="text-base text-indigo-900">Global Transition</CardTitle></CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label>Effect</Label>
+                          <Select value={globalTransition} onValueChange={setGlobalTransition}>
+                            <SelectTrigger className="bg-white">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="fade">✨ Fade</SelectItem>
+                              <SelectItem value="slide-left">⬅️ Slide Left</SelectItem>
+                              <SelectItem value="slide-right">➡️ Slide Right</SelectItem>
+                              <SelectItem value="zoom">🔍 Zoom</SelectItem>
+                              <SelectItem value="none">None</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Duration (ms)</Label>
+                          <div className="flex items-center gap-2">
+                            <Input type="number" value={transitionDuration} onChange={(e) => setTransitionDuration(parseInt(e.target.value))} className="bg-white" step={100} min={100} max={5000} />
+                            <span className="text-xs text-muted-foreground whitespace-nowrap">milliseconds</span>
                           </div>
                         </div>
-                        <Plus className="w-4 h-4 text-slate-400" />
                       </div>
-                    ))}
+                    </CardContent>
+                  </Card>
+
+                  {/* Background Music */}
+                  <Card className="border-slate-200 shadow-sm">
+                    <CardHeader className="pb-3 flex flex-row items-center justify-between">
+                      <CardTitle className="text-base">Background Music</CardTitle>
+                      {backgroundMusic && (
+                        <Button variant="ghost" size="sm" className="h-6 text-red-500" onClick={() => { setBackgroundMusic(null); setBackgroundMusicName(null); }}>
+                          Clear
+                        </Button>
+                      )}
+                    </CardHeader>
+                    <CardContent>
+                      {backgroundMusic ? (
+                        <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border">
+                          <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600">
+                            <Music className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <p className="font-medium text-sm">{backgroundMusicName}</p>
+                            <p className="text-xs text-muted-foreground">Playing in loop</p>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-center py-4 border-2 border-dashed rounded-lg cursor-pointer hover:bg-slate-50 transition-colors"
+                          onClick={() => setIsMusicPickerOpen(true)}
+                        >
+                          <Music className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+                          <p className="text-sm font-medium text-slate-600">Select Music from Library</p>
+                        </div>
+                      )}
+                      <AudioPicker
+                        open={isMusicPickerOpen}
+                        onOpenChange={setIsMusicPickerOpen}
+                        allContent={allContent}
+                        onSelect={handleMusicSelect}
+                      />
+                    </CardContent>
+                  </Card>
+
+                  {/* Devices */}
+                  <Card className="border-slate-200 shadow-sm">
+                    <CardHeader className="pb-3"><CardTitle className="text-base">Assigned Devices</CardTitle></CardHeader>
+                    <CardContent className="space-y-3">
+                      {assignedDevices.map(d => (
+                        <div key={d.id} className="flex items-center justify-between p-2 bg-slate-50 rounded border">
+                          <div className="flex items-center gap-2">
+                            <Monitor className="w-4 h-4 text-slate-500" />
+                            <span className="text-sm font-medium">{d.name}</span>
+                          </div>
+                          <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-400 hover:text-red-500" onClick={() => removeDeviceFromScreen(d.id)}>
+                            <X className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      ))}
+                      <Button variant="outline" size="sm" className="w-full" onClick={() => setIsAddDeviceOpen(true)}>
+                        <Plus className="w-3 h-3 mr-2" /> Add Device
+                      </Button>
+                    </CardContent>
+                  </Card>
+
+                  <div className="pt-4">
+                    <Button variant="outline" className="w-full border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700" onClick={handleDeleteScreen}>
+                      <Trash2 className="w-4 h-4 mr-2" /> Delete Program
+                    </Button>
+                  </div>
                 </div>
-              ) : (
-                <p className="text-sm text-center text-muted-foreground py-8">
-                  No unassigned devices available. Create a new one instead.
-                </p>
-              )}
+              </TabsContent>
+            </Tabs>
+          </Card>
+
+          {/* Right: Live Preview */}
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold flex items-center gap-2">
+                <Play className="w-4 h-4 text-green-600" /> Live Preview
+              </h3>
+              <span className="text-xs text-muted-foreground">Real-time simulation</span>
             </div>
-          ) : (
-            <form onSubmit={createNewDevice} className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                Enter the name and PIN to claim and assign a new device:
-              </p>
-              <div className="space-y-2">
-                <Label htmlFor="deviceName">Device Name</Label>
-                <Input
-                  id="deviceName"
-                  value={newDeviceName}
-                  onChange={(e) => setNewDeviceName(e.target.value)}
-                  placeholder="e.g., Lobby TV"
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="devicePin">6-Digit PIN</Label>
-                <Input
-                  id="devicePin"
-                  value={newDevicePin}
-                  onChange={(e) => setNewDevicePin(e.target.value)}
-                  placeholder="123456"
-                  maxLength={6}
-                  className="text-center text-2xl tracking-widest"
-                  required
-                />
-                <p className="text-xs text-muted-foreground">
-                  Find the PIN displayed on the device screen (visit /player)
+
+            <PreviewPlayer
+              playlist={playlist}
+              contentDetails={allContent}
+              backgroundMusic={backgroundMusic}
+              globalTransition={globalTransition}
+              transitionDuration={transitionDuration}
+            />
+
+            <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 text-sm text-blue-800">
+              <p className="font-medium mb-1">ðŸ’¡ Pro Tip</p>
+              <p>The preview above shows exactly how your content will appear on the device, including transitions and timing.</p>
+            </div>
+          </div>
+
+        </div>
+
+        {/* Keeping Add Device Dialog from original code ... */}
+        <Dialog open={isAddDeviceOpen} onOpenChange={setIsAddDeviceOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Add Device to Program</DialogTitle>
+            </DialogHeader>
+
+            {/* Mode Toggle */}
+            <div className="flex gap-2 p-1 bg-slate-100 rounded-lg">
+              <button
+                className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors ${deviceMode === "existing"
+                  ? "bg-white shadow-sm"
+                  : "text-slate-600 hover:text-slate-900"
+                  }`}
+                onClick={() => setDeviceMode("existing")}
+              >
+                Add Existing
+              </button>
+              <button
+                className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors ${deviceMode === "new"
+                  ? "bg-white shadow-sm"
+                  : "text-slate-600 hover:text-slate-900"
+                  }`}
+                onClick={() => setDeviceMode("new")}
+              >
+                Add New
+              </button>
+            </div>
+
+            {deviceMode === "existing" ? (
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Select an unassigned device to add to this screen:
                 </p>
+                {allDevices.filter((d) => !d.screenId).length > 0 ? (
+                  <div className="max-h-[300px] overflow-y-auto space-y-2">
+                    {allDevices
+                      .filter((d) => !d.screenId)
+                      .map((device) => (
+                        <div
+                          key={device.id}
+                          className="flex items-center justify-between p-3 border rounded-lg hover:bg-slate-50 cursor-pointer"
+                          onClick={() => assignExistingDevice(device.id)}
+                        >
+                          <div className="flex items-center gap-3">
+                            <Monitor className="w-5 h-5 text-slate-600" />
+                            <div>
+                              <p className="font-medium">{device.name}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {device.status === "pending" ? "Pending" : device.status}
+                              </p>
+                            </div>
+                          </div>
+                          <Plus className="w-4 h-4 text-slate-400" />
+                        </div>
+                      ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-center text-muted-foreground py-8">
+                    No unassigned devices available. Create a new one instead.
+                  </p>
+                )}
               </div>
-              <Button type="submit" className="w-full">
-                Create & Assign Device
-              </Button>
-            </form>
-          )}
-        </DialogContent>
-      </Dialog>
+            ) : (
+              <form onSubmit={createNewDevice} className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Enter the name and PIN to claim and assign a new device:
+                </p>
+                <div className="space-y-2">
+                  <Label htmlFor="deviceName">Device Name</Label>
+                  <Input
+                    id="deviceName"
+                    value={newDeviceName}
+                    onChange={(e) => setNewDeviceName(e.target.value)}
+                    placeholder="e.g., Lobby TV"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="devicePin">6-Digit PIN</Label>
+                  <Input
+                    id="devicePin"
+                    value={newDevicePin}
+                    onChange={(e) => setNewDevicePin(e.target.value)}
+                    placeholder="123456"
+                    maxLength={6}
+                    className="text-center text-2xl tracking-widest"
+                    required
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Find the PIN displayed on the device screen (visit /player)
+                  </p>
+                </div>
+                <Button type="submit" className="w-full">
+                  Create & Assign Device
+                </Button>
+              </form>
+            )}
+          </DialogContent>
+        </Dialog>
+      </div>
     </DndProvider>
+  );
+}
+
+// Helper for Preview Video
+function PreviewVideo({ src, style, isActive, isPlaying }: { src: string, style: any, isActive: boolean, isPlaying: boolean }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    if (isActive && isPlaying && videoRef.current) {
+      videoRef.current.currentTime = 0;
+      const playPromise = videoRef.current.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(() => { });
+      }
+    } else if (videoRef.current) {
+      videoRef.current.pause();
+    }
+  }, [isActive, isPlaying]);
+
+  return (
+    <video
+      ref={videoRef}
+      src={src}
+      style={style}
+      muted
+      playsInline
+      className="w-full h-full object-contain"
+    />
   );
 }
