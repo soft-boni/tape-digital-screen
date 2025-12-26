@@ -615,21 +615,21 @@ export function ScreenEditor() {
 
   return (
     <DndProvider backend={HTML5Backend}>
-      <div className="h-[calc(100vh-100px)] flex flex-col gap-4">
+      <div className="h-auto lg:h-[calc(100vh-100px)] flex flex-col gap-4">
         {/* Header */}
-        <div className="flex items-center justify-between pb-4 border-b bg-white/50 backdrop-blur-sm sticky top-0 z-10 p-2">
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Button variant="ghost" size="icon" onClick={() => navigate("/programs")} className="mr-2">
-                <ChevronLeft className="w-6 h-6" />
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between pb-4 border-b bg-white/50 backdrop-blur-sm sticky top-0 z-10 p-2 gap-4 md:gap-0">
+          <div className="w-full md:w-auto">
+            <h1 className="text-xl md:text-2xl font-bold flex items-center gap-2">
+              <Button variant="ghost" size="icon" onClick={() => navigate("/programs")} className="-ml-2 mr-1 h-8 w-8 md:h-10 md:w-10">
+                <ChevronLeft className="w-5 h-5 md:w-6 md:h-6" />
               </Button>
-              <Monitor className="w-6 h-6 text-blue-600" />
-              {screen.name}
+              <Monitor className="w-5 h-5 md:w-6 md:h-6 text-blue-600 flex-shrink-0" />
+              <span className="truncate">{screen.name}</span>
             </h1>
-            <p className="text-sm text-muted-foreground ml-12">ID: {screen.id}</p>
+            <p className="text-xs text-muted-foreground ml-9 md:ml-12 truncate max-w-[200px] md:max-w-none">ID: {screen.id}</p>
           </div>
-          <div className="flex gap-2">
-            <Button onClick={saveChanges} disabled={saving} className="bg-blue-600 hover:bg-blue-700 min-w-[140px]">
+          <div className="flex gap-2 w-full md:w-auto">
+            <Button onClick={saveChanges} disabled={saving} className="bg-blue-600 hover:bg-blue-700 w-full md:w-auto min-w-[140px]">
               {saving ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" />
@@ -649,10 +649,10 @@ export function ScreenEditor() {
 
           {/* Left: Editor & Settings */}
           {/* Order 2 on mobile (bottom), Order 1 on desktop (left) */}
-          <Card className="flex flex-col min-h-0 border-0 shadow-none bg-transparent w-full lg:w-1/2 order-2 lg:order-1">
-            <Tabs defaultValue="timeline" className="flex-1 flex flex-col min-h-0">
-              <div className="flex items-center justify-between mb-4">
-                <TabsList className="bg-slate-100">
+          <Card className="flex flex-col border-0 shadow-none bg-transparent w-full lg:w-1/2 order-2 lg:order-1 h-auto lg:h-full lg:min-h-0">
+            <Tabs defaultValue="timeline" className="flex-col min-h-0 lg:flex-1 lg:flex h-auto">
+              <div className="flex items-center justify-between mb-4 sticky top-0 bg-slate-50 z-10 py-2">
+                <TabsList className="bg-white border">
                   <TabsTrigger value="timeline">Timeline</TabsTrigger>
                   <TabsTrigger value="settings">Settings</TabsTrigger>
                 </TabsList>
@@ -685,7 +685,7 @@ export function ScreenEditor() {
                 </div>
               </div>
 
-              <TabsContent value="timeline" className="flex-1 overflow-y-auto min-h-0 pr-2">
+              <TabsContent value="timeline" className="overflow-visible lg:overflow-y-auto lg:flex-1 lg:min-h-0 pr-2">
                 <div className="space-y-2 pb-10">
                   {playlist.map((item, index) => (
                     <DraggableItem
@@ -709,7 +709,7 @@ export function ScreenEditor() {
                 </div>
               </TabsContent>
 
-              <TabsContent value="settings" className="flex-1 overflow-y-auto min-h-0">
+              <TabsContent value="settings" className="overflow-visible lg:overflow-y-auto lg:flex-1 lg:min-h-0">
                 <div className="space-y-6">
 
                   {/* Program Info */}
