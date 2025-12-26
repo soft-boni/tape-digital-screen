@@ -4,7 +4,7 @@ import { LayoutDashboard, Monitor, Smartphone, Library, LogOut, Settings, Bell, 
 import { TapeLogo } from "@/shared/components/TapeLogo";
 import { cn } from "@/shared/components/ui/utils";
 import { Button } from "@/shared/components/ui/button";
-import { supabase } from "@/App";
+import { supabase } from "@/shared/utils/supabase/client";
 import { useEffect, useState, useRef } from "react";
 import {
   DropdownMenu,
