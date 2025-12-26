@@ -1,5 +1,25 @@
 
+import { useEffect, useState } from "react";
+import { BrowserRouter, Route, Routes, Navigate, Outlet, useLocation } from "react-router-dom";
+import { Toaster } from "sonner";
+import { motion, AnimatePresence } from "motion/react";
+
 import { supabase } from "@/shared/utils/supabase/client";
+import { DashboardLayout } from "@/shared/components/layout/DashboardLayout";
+import { LoginPage } from "@/user-portal/pages/Auth";
+import { Dashboard } from "@/user-portal/pages/Dashboard";
+import { Screens } from "@/user-portal/pages/Prgrams";
+import { ScreenEditor } from "@/user-portal/pages/ProgramEditor";
+import { Devices } from "@/user-portal/pages/Devices";
+import { Content } from "@/user-portal/pages/Content";
+import { Player } from "@/user-portal/pages/Player";
+import { EditProfile } from "@/user-portal/pages/EditProfile";
+import { Settings } from "@/user-portal/pages/Settings";
+import { AdminLayout } from "@/admin-portal/layout/AdminLayout";
+import { AdminAuth } from "@/admin-portal/pages/AdminAuth";
+import { AdminDashboard } from "@/admin-portal/pages/AdminDashboard";
+import { AdminUsers } from "@/admin-portal/pages/AdminUsers";
+import { AdminSettings } from "@/admin-portal/pages/AdminSettings";
 
 function ProtectedRoute() {
   const [session, setSession] = useState<any>(null);
