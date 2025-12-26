@@ -406,7 +406,45 @@ const AudioPicker = ({ open, onOpenChange, onSelect, allContent }: any) => {
 
 // --- Main Editor Component ---
 import { useNavigate, useParams } from "react-router-dom";
+import { Skeleton } from "@/shared/components/ui/skeleton";
 // ... imports
+
+// Skeleton Component
+const ProgramEditorSkeleton = () => (
+  <div className="h-auto lg:h-[calc(100vh-100px)] flex flex-col gap-4">
+    {/* Header Skeleton */}
+    <div className="flex flex-col md:flex-row items-start md:items-center justify-between pb-4 border-b gap-4 md:gap-0">
+      <div className="space-y-2">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-4 w-32" />
+      </div>
+      <div className="flex gap-2 w-full md:w-auto">
+        <Skeleton className="h-10 w-full md:w-32" />
+      </div>
+    </div>
+
+    <div className="flex-1 flex flex-col lg:flex-row gap-6 min-h-0">
+      {/* Left Column Skeleton */}
+      <div className="w-full lg:w-1/2 order-2 lg:order-1 flex flex-col gap-4">
+        <Skeleton className="h-10 w-full mb-4" />
+        <div className="space-y-4">
+          {[1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-24 w-full rounded-xl" />
+          ))}
+        </div>
+      </div>
+
+      {/* Right Column Skeleton (Preview) */}
+      <div className="w-full lg:w-1/2 order-1 lg:order-2">
+        <Skeleton className="w-full aspect-video rounded-xl mb-4" />
+        <div className="flex justify-between items-center">
+          <Skeleton className="h-12 w-32" />
+          <Skeleton className="h-8 w-24" />
+        </div>
+      </div>
+    </div>
+  </div>
+);
 
 // ... inside ScreenEditor component
 export function ScreenEditor() {
@@ -611,7 +649,9 @@ export function ScreenEditor() {
     }
   };
 
-  if (loading) return <div className="flex h-screen items-center justify-center"><div className="animate-pulse">Loading Program...</div></div>;
+  if (loading) {
+    return <ProgramEditorSkeleton />;
+  }
 
   return (
     <DndProvider backend={HTML5Backend}>
@@ -623,7 +663,7 @@ export function ScreenEditor() {
               <Button variant="ghost" size="icon" onClick={() => navigate("/programs")} className="-ml-2 mr-1 h-8 w-8 md:h-10 md:w-10">
                 <ChevronLeft className="w-5 h-5 md:w-6 md:h-6" />
               </Button>
-              <Monitor className="w-5 h-5 md:w-6 md:h-6 text-blue-600 flex-shrink-0" />
+              <Monitor className="w-5 h-5 md:w-6 h-6 text-blue-600 flex-shrink-0" />
               <span className="truncate">{screen.name}</span>
             </h1>
             <p className="text-xs text-muted-foreground ml-9 md:ml-12 truncate max-w-[200px] md:max-w-none">ID: {screen.id}</p>
@@ -652,9 +692,19 @@ export function ScreenEditor() {
           <Card className="flex flex-col border-0 shadow-none bg-transparent w-full lg:w-1/2 order-2 lg:order-1 h-auto lg:h-full lg:min-h-0">
             <Tabs defaultValue="timeline" className="flex-col min-h-0 lg:flex-1 lg:flex h-auto">
               <div className="flex items-center justify-between mb-4 sticky top-0 bg-slate-50 z-10 py-2">
-                <TabsList className="bg-white border">
-                  <TabsTrigger value="timeline">Timeline</TabsTrigger>
-                  <TabsTrigger value="settings">Settings</TabsTrigger>
+                <TabsList className="bg-slate-100 border p-1">
+                  <TabsTrigger
+                    value="timeline"
+                    className="data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-primary"
+                  >
+                    Timeline
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="settings"
+                    className="data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-primary"
+                  >
+                    Settings
+                  </TabsTrigger>
                 </TabsList>
 
                 <div className="flex gap-2">
@@ -846,7 +896,7 @@ export function ScreenEditor() {
             />
 
             <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 text-sm text-blue-800">
-              <p className="font-medium mb-1">ðŸ’¡ Pro Tip</p>
+              <p className="font-medium mb-1">Pro Tip</p>
               <p>The preview above shows exactly how your content will appear on the device, including transitions and timing.</p>
             </div>
           </div>
