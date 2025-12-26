@@ -342,7 +342,7 @@ const PreviewPlayer = ({ playlist, contentDetails, backgroundMusic, globalTransi
         {backgroundMusic && (
           <div className="flex items-center gap-3 bg-slate-800 px-3 py-1.5 rounded-full border border-slate-700">
             <Music className="w-3.5 h-3.5 text-blue-400 animate-pulse" />
-            <div className="flex flex-col">
+            <div className="flex flex-col hidden md:flex">
               <span className="text-[10px] text-slate-400 leading-none">Music Active</span>
               {/* We might not know the name here unless we pass it */}
             </div>
@@ -666,7 +666,7 @@ export function ScreenEditor() {
                     </DialogTrigger>
                     <DialogContent className="max-w-4xl h-[80vh]">
                       <DialogHeader><DialogTitle>Add Content to Timeline</DialogTitle></DialogHeader>
-                      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 overflow-y-auto p-2">
+                      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6 overflow-y-auto p-4">
                         {allContent.map(c => (
                           <div key={c.id}
                             className="group relative aspect-square bg-slate-100 rounded-lg overflow-hidden cursor-pointer border hover:border-blue-500 transition-all"
