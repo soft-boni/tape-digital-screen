@@ -617,27 +617,41 @@ export function ScreenEditor() {
   const createNewDevice = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await apiFetch("/devices/claim", {
+      const newDevice = await apiFetch("/devices/claim", {
         method: "POST",
         body: JSON.stringify({ pin: newDevicePin, name: newDeviceName }),
       });
-      const devices = await apiFetch("/devices");
-      const newDevice = devices.find((d: any) => d.name === newDeviceName);
-      if (newDevice) {
+
+      if (newDevice && newDevice.id) {
         await apiFetch(`/devices/${newDevice.id}`, {
           method: "PUT",
           body: JSON.stringify({ screenId: id }),
         });
+        toast.success("Device created and assigned");
+        setNewDeviceName("");
+        setNewDevicePin("");
+        loadData();
+        setIsAddDeviceOpen(false);
+      } else {
+        throw new Error("Failed to claim device");
       }
-      toast.success("Device created and assigned");
-      setNewDeviceName("");
-      setNewDevicePin("");
-      loadData();
-      setIsAddDeviceOpen(false);
     } catch (error: any) {
       toast.error(error.message || "Failed to create device");
     }
   };
+
+  // ... (removeDeviceFromScreen kept as is)
+
+  // ... (inside Dialog content)
+  <Input
+    id="devicePin"
+    value={newDevicePin}
+    onChange={(e) => setNewDevicePin(e.target.value.toUpperCase())}
+    placeholder="ABCD-1234"
+    maxLength={9}
+    className="text-center text-2xl tracking-widest uppercase"
+    required
+  />
 
   const removeDeviceFromScreen = async (deviceId: string) => {
     try {
@@ -1083,10 +1097,10 @@ export function ScreenEditor() {
                   <Input
                     id="devicePin"
                     value={newDevicePin}
-                    onChange={(e) => setNewDevicePin(e.target.value)}
-                    placeholder="123456"
-                    maxLength={6}
-                    className="text-center text-2xl tracking-widest"
+                    onChange={(e) => setNewDevicePin(e.target.value.toUpperCase())}
+                    placeholder="ABCD-1234"
+                    maxLength={9}
+                    className="text-center text-2xl tracking-widest uppercase"
                     required
                   />
                   <p className="text-xs text-muted-foreground">

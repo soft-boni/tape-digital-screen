@@ -25,6 +25,13 @@ import { Badge } from "@/shared/components/ui/badge";
 import { Plus, Trash2, Edit2, MonitorOff, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/shared/components/ui/select";
 
 interface Device {
   id: string;
@@ -33,6 +40,7 @@ interface Device {
   lastSeen: string;
   screenId: string | null;
   pin: string | null;
+  ipAddress?: string;
 }
 
 interface Screen {
@@ -69,6 +77,28 @@ export function Devices() {
       toast.error("Failed to load devices");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleAssignProgram = async (deviceId: string, programId: string) => {
+    const toastId = toast.loading("Updating assignment...");
+    const targetId = programId === "unassigned" ? null : programId;
+
+    try {
+      await apiFetch(`/devices/${deviceId}`, {
+        method: "PUT",
+        body: JSON.stringify({ screenId: targetId }),
+      });
+
+      // Optimistic update
+      setDevices(prev => prev.map(d =>
+        d.id === deviceId ? { ...d, screenId: targetId } : d
+      ));
+
+      toast.success("Device updated", { id: toastId });
+    } catch (error) {
+      toast.error("Failed to assign program", { id: toastId });
+      loadData(); // Revert on failure
     }
   };
 
@@ -208,9 +238,24 @@ export function Devices() {
                   </TableCell>
                   <TableCell className="font-medium">{device.name}</TableCell>
                   <TableCell className="font-mono text-sm text-muted-foreground">
-                    {(device as any).ipAddress || 'N/A'}
+                    {device.ipAddress || 'N/A'}
                   </TableCell>
-                  <TableCell>{getScreenName(device.screenId)}</TableCell>
+                  <TableCell>
+                    <Select
+                      value={device.screenId || "unassigned"}
+                      onValueChange={(val) => handleAssignProgram(device.id, val)}
+                    >
+                      <SelectTrigger className="w-[180px] h-8">
+                        <SelectValue placeholder="Select Program" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="unassigned" className="text-muted-foreground italic">Unassigned</SelectItem>
+                        {screens.map(s => (
+                          <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </TableCell>
                   <TableCell className="text-muted-foreground text-sm">
                     {formatDistanceToNow(new Date(device.lastSeen), { addSuffix: true })}
                   </TableCell>

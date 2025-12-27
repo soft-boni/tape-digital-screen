@@ -283,9 +283,16 @@ export function Content() {
         return;
       }
 
+      // Format as Playlist Items
+      const newPlaylistItems = visualContent.map(c => ({
+        contentId: c.id,
+        duration: 10,
+        volume: 100
+      }));
+
       await apiFetch(`/programs/${selectedScreenId}`, {
         method: "PUT",
-        body: JSON.stringify({ content: [...existingContent, ...visualContent] })
+        body: JSON.stringify({ content: [...existingContent, ...newPlaylistItems] })
       });
       toast.success(`Assigned ${visualContent.length} items`, { id: toastId });
       setAssignModalOpen(false);
@@ -455,15 +462,14 @@ export function Content() {
             const assignedTo = getAssignedScreens(item.id);
 
             return (
-              <Card
-                key={item.id}
+              <div
                 className={cn(
-                  "group relative overflow-hidden transition-all duration-200 cursor-pointer border-2",
-                  isSelected ? "border-indigo-500 shadow-md transform scale-[1.02]" : "border-transparent hover:border-slate-200"
+                  "group relative overflow-hidden transition-all duration-200 cursor-pointer border-2 bg-slate-50",
+                  isSelected ? "border-indigo-500 shadow-md ring-2 ring-indigo-100" : "border-transparent hover:border-slate-200"
                 )}
-                onClick={(e) => toggleSelection(item.id, e)}
+                onClick={() => setPreviewItem(item)} // Click thumbnail to Preview
               >
-                <div className="aspect-square bg-slate-100 relative">
+                <div className="aspect-square relative">
                   {item.type === "image" ? (
                     <img src={item.readUrl} alt={item.name} className="w-full h-full object-cover" />
                   ) : item.type === "video" ? (
@@ -477,17 +483,25 @@ export function Content() {
                     </div>
                   )}
 
+                  {/* Checkbox Overlay (Always visible if selected, otherwise hover) */}
                   <div className={cn(
-                    "absolute inset-0 bg-black/40 transition-opacity flex flex-col justify-end p-3",
+                    "absolute top-2 right-2 z-10 transition-opacity",
+                    isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                  )} onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={(e) => toggleSelection(item.id, e as any)}
+                      className="w-5 h-5 rounded border-2 border-white/50 text-indigo-600 focus:ring-indigo-500 cursor-pointer shadow-sm"
+                    />
+                  </div>
+
+                  <div className={cn(
+                    "absolute inset-0 bg-black/40 transition-opacity flex flex-col justify-end p-3 pointer-events-none",
                     isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100"
                   )}>
-                    <div className="flex items-center justify-between">
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={() => { }}
-                        className="w-5 h-5 rounded border-white/50 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                      />
+                    <div className="flex items-center justify-between pointer-events-auto">
+                      <div /> {/* Spacer for checkbox */}
                       <div className="flex gap-1">
                         <Button variant="secondary" size="icon" className="h-8 w-8 rounded-full" onClick={(e) => { e.stopPropagation(); setPreviewItem(item); }}>
                           <Monitor className="w-4 h-4" />
@@ -508,12 +522,14 @@ export function Content() {
                     </div>
                   </div>
                   <span className="absolute top-2 left-2 px-2 py-0.5 rounded bg-black/50 text-white text-[10px] uppercase font-medium">{item.type}</span>
-                  <span className="absolute top-2 right-2 px-2 py-0.5 rounded bg-black/50 text-white text-[10px] font-medium">{formatFileSize(item.size)}</span>
+                  <span className="absolute bottom-2 left-2 px-2 py-0.5 rounded bg-black/50 text-white text-[10px] font-medium">{formatFileSize(item.size)}</span>
                 </div>
-                <div className="p-3">
-                  <p className="font-medium text-sm truncate" title={item.name}>{item.name}</p>
+
+                {/* Meta Info Below Card */}
+                <div className="p-3 bg-white border-t border-slate-100">
+                  <p className="font-medium text-sm truncate text-slate-700" title={item.name}>{item.name}</p>
                   <div className="flex items-center justify-between text-xs text-muted-foreground mt-1">
-                    <span>{item.type === 'image' ? formatFileSize(item.size) : formatDistanceToNow(new Date(item.createdAt), { addSuffix: true })}</span>
+                    <span>{formatDistanceToNow(new Date(item.createdAt), { addSuffix: true })}</span>
                   </div>
                   {assignedTo.length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-1">
@@ -526,7 +542,7 @@ export function Content() {
                     </div>
                   )}
                 </div>
-              </Card>
+              </div>
             );
           })}
         </div>
