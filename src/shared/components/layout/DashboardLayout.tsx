@@ -24,7 +24,6 @@ const NAV_ITEMS = [
   { label: "Programs", href: "/programs", icon: Monitor },
   { label: "Devices", href: "/devices", icon: Smartphone },
   { label: "Content", href: "/content", icon: Library },
-  { label: "Settings", href: "/settings", icon: Settings },
 ];
 
 interface Notification {
