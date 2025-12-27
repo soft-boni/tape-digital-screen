@@ -2,6 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/shared/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import { ChangePasswordCard } from "@/shared/components/ChangePasswordCard";
+import { SessionsList } from "@/shared/components/SessionsList";
 
 export function Settings() {
   const navigate = useNavigate();
@@ -21,6 +22,7 @@ export function Settings() {
 
       <div className="grid gap-6">
         <ChangePasswordCard theme="light" />
+        <SessionsList />
       </div>
     </div>
   );

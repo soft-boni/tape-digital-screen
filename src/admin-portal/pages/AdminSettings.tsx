@@ -1,5 +1,6 @@
 
 import { ChangePasswordCard } from "@/shared/components/ChangePasswordCard";
+import { SessionsList } from "@/shared/components/SessionsList";
 
 export function AdminSettings() {
     return (
@@ -11,6 +12,7 @@ export function AdminSettings() {
 
             <div className="grid gap-6">
                 <ChangePasswordCard />
+                <SessionsList />
             </div>
         </div>
     );
