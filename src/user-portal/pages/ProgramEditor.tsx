@@ -709,7 +709,7 @@ export function ScreenEditor() {
           <Card className="flex flex-col border-0 shadow-none bg-transparent w-full lg:w-1/2 order-2 lg:order-1 h-auto lg:h-full lg:min-h-0">
             <Tabs defaultValue="timeline" className="flex-col min-h-0 lg:flex-1 lg:flex h-auto">
               <div className="flex items-center justify-between mb-4 sticky top-0 bg-slate-50 z-10 py-2">
-                <TabsList className="bg-slate-100 border p-1">
+                <TabsList className="bg-slate-100 border rounded-full p-1">
                   <TabsTrigger
                     value="timeline"
                     className="data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-primary"
