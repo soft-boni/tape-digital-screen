@@ -70,38 +70,25 @@ export function SessionsList() {
     };
 
     const revokeAllOthers = async () => {
-        if (!currentSessionId) return;
+        if (!currentSessionId) {
+            console.error("No current session ID found");
+            return;
+        }
 
         try {
-            // 1. Fetch current active session IDs
-            const { data: allSessions, error: fetchError } = await supabase
-                .from("user_sessions")
-                .select("id");
+            console.log("Revoking all sessions except:", currentSessionId);
 
-            if (fetchError) throw fetchError;
+            const { error } = await supabase.rpc('revoke_other_sessions', {
+                current_session_id: currentSessionId
+            });
 
-            // 2. Identify sessions to delete (All except current)
-            const idsToDelete = (allSessions || [])
-                .filter((s: any) => s.id !== currentSessionId)
-                .map((s: any) => s.id);
+            if (error) throw error;
 
-            if (idsToDelete.length === 0) {
-                toast.info("No other sessions to revoke");
-                return;
-            }
-
-            // 3. Delete them
-            const { error: deleteError } = await supabase
-                .from("user_sessions")
-                .delete()
-                .in("id", idsToDelete);
-
-            if (deleteError) throw deleteError;
-
+            // Optimistic update
             setSessions((prev) => prev.filter((s) => s.id === currentSessionId));
             toast.success("All other sessions revoked");
         } catch (err) {
-            console.error(err);
+            console.error("Revoke error:", err);
             toast.error("Failed to revoke sessions");
         }
     };

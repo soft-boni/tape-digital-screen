@@ -1,6 +1,6 @@
 
 import { Link, useLocation, Outlet, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Monitor, Smartphone, Library, LogOut, Settings, Bell, User, Edit, Menu } from "lucide-react";
+import { LayoutDashboard, PlaySquare, Smartphone, Library, LogOut, Settings, Bell, User, Edit, Menu } from "lucide-react";
 import { TapeLogo } from "@/shared/components/TapeLogo";
 import { cn } from "@/shared/components/ui/utils";
 import { Button } from "@/shared/components/ui/button";
@@ -21,7 +21,7 @@ import { apiFetch } from "@/shared/utils/api";
 
 const NAV_ITEMS = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { label: "Programs", href: "/programs", icon: Monitor },
+  { label: "Programs", href: "/programs", icon: PlaySquare },
   { label: "Devices", href: "/devices", icon: Smartphone },
   { label: "Content", href: "/content", icon: Library },
 ];
