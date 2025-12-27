@@ -26,10 +26,14 @@ interface Session {
     is_current?: boolean;
 }
 
+import { getOrCreateSessionId } from "@/shared/utils/session";
+
+// ...
+
 export function SessionsList() {
     const [sessions, setSessions] = useState<Session[]>([]);
     const [loading, setLoading] = useState(true);
-    const currentSessionId = localStorage.getItem("tape_client_id");
+    const currentSessionId = getOrCreateSessionId(); // Use utility to Ensure ID exists
 
     const fetchSessions = async () => {
         try {
