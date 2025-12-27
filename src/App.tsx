@@ -1,5 +1,6 @@
 
 import { useEffect, useState } from "react";
+import { getOrCreateSessionId, SESSION_ID_KEY } from "@/shared/utils/session";
 import { BrowserRouter, Route, Routes, Navigate, Outlet, useLocation } from "react-router-dom";
 import { Toaster } from "sonner";
 import { motion, AnimatePresence } from "motion/react";
@@ -21,7 +22,7 @@ import { AdminDashboard } from "@/admin-portal/pages/AdminDashboard";
 import { AdminUsers } from "@/admin-portal/pages/AdminUsers";
 import { AdminSettings } from "@/admin-portal/pages/AdminSettings";
 
-const SESSION_ID_KEY = "tape_client_id";
+
 
 function getDeviceInfo() {
   const ua = navigator.userAgent;
