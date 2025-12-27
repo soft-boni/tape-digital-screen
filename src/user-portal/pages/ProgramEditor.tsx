@@ -407,6 +407,7 @@ const AudioPicker = ({ open, onOpenChange, onSelect, allContent }: any) => {
 // --- Main Editor Component ---
 import { useNavigate, useParams } from "react-router-dom";
 import { Skeleton } from "@/shared/components/ui/skeleton";
+import { Checkbox } from "@/shared/components/ui/checkbox";
 // ... imports
 
 // Skeleton Component
@@ -459,6 +460,8 @@ export function ScreenEditor() {
   const [loading, setLoading] = useState(true);
   const [playlist, setPlaylist] = useState<any[]>([]);
   const [isAddContentOpen, setIsAddContentOpen] = useState(false);
+  const [selectedContentIds, setSelectedContentIds] = useState<string[]>([]);
+  const [previewContent, setPreviewContent] = useState<any>(null);
   const [isAddDeviceOpen, setIsAddDeviceOpen] = useState(false);
   const [isMusicPickerOpen, setIsMusicPickerOpen] = useState(false);
 
@@ -708,31 +711,125 @@ export function ScreenEditor() {
                 </TabsList>
 
                 <div className="flex gap-2">
-                  <Dialog open={isAddContentOpen} onOpenChange={setIsAddContentOpen}>
+                  <Dialog open={isAddContentOpen} onOpenChange={(open: boolean) => {
+                    setIsAddContentOpen(open);
+                    if (!open) setSelectedContentIds([]); // Clear selection on close
+                  }}>
                     <DialogTrigger asChild>
                       <Button size="sm" variant="outline" className="border-dashed border-slate-300">
                         <Plus className="w-4 h-4 mr-2" /> Content
                       </Button>
                     </DialogTrigger>
-                    <DialogContent className="max-w-4xl h-[80vh]">
-                      <DialogHeader><DialogTitle>Add Content to Timeline</DialogTitle></DialogHeader>
-                      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6 overflow-y-auto p-4">
-                        {allContent.map(c => (
-                          <div key={c.id}
-                            className="group relative aspect-square bg-slate-100 rounded-lg overflow-hidden cursor-pointer border hover:border-blue-500 transition-all"
-                            onClick={() => addContentToPlaylist(c.id)}
+                    <DialogContent className="max-w-4xl h-[80vh] flex flex-col p-0 gap-0">
+                      <DialogHeader className="p-4 border-b">
+                        <DialogTitle>Add Content to Timeline</DialogTitle>
+                      </DialogHeader>
+
+                      <div className="flex-1 overflow-y-auto p-4 min-h-0 bg-slate-50/50">
+                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                          {allContent.map(c => {
+                            const isSelected = selectedContentIds.includes(c.id);
+                            return (
+                              <div key={c.id}
+                                className={cn(
+                                  "group relative aspect-square bg-white rounded-xl overflow-hidden cursor-pointer border-2 transition-all shadow-sm",
+                                  isSelected ? "border-blue-600 ring-2 ring-blue-100" : "border-transparent hover:border-blue-300"
+                                )}
+                                onClick={() => setPreviewContent(c)}
+                              >
+                                {c.type === "image" ? (
+                                  <img src={c.readUrl} className="w-full h-full object-cover" />
+                                ) : (
+                                  <video src={c.readUrl} className="w-full h-full object-cover" />
+                                )}
+
+                                <div className="absolute top-2 right-2 z-10" onClick={(e) => e.stopPropagation()}>
+                                  <Checkbox
+                                    checked={isSelected}
+                                    onCheckedChange={(checked: boolean) => {
+                                      if (checked) {
+                                        setSelectedContentIds(prev => [...prev, c.id]);
+                                      } else {
+                                        setSelectedContentIds(prev => prev.filter(id => id !== c.id));
+                                      }
+                                    }}
+                                    className="data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600 border-white/80 bg-black/20"
+                                  />
+                                </div>
+
+                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors pointer-events-none" />
+
+                                <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-3 pt-6 pointer-events-none">
+                                  <p className="text-white text-[11px] font-medium truncate leading-tight">{c.name}</p>
+                                  <p className="text-white/70 text-[10px] uppercase tracking-wider mt-0.5">{c.type}</p>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="p-4 border-t bg-white flex justify-between items-center">
+                        <span className="text-sm text-muted-foreground">
+                          {selectedContentIds.length} item{selectedContentIds.length !== 1 && 's'} selected
+                        </span>
+                        <div className="flex gap-2">
+                          <Button variant="outline" onClick={() => setIsAddContentOpen(false)}>Cancel</Button>
+                          <Button
+                            onClick={() => {
+                              selectedContentIds.forEach(id => addContentToPlaylist(id));
+                              setIsAddContentOpen(false);
+                              setSelectedContentIds([]);
+                            }}
+                            disabled={selectedContentIds.length === 0}
+                            className="bg-blue-600 hover:bg-blue-700"
                           >
-                            {c.type === "image" ? <img src={c.readUrl} className="w-full h-full object-cover" /> : <video src={c.readUrl} className="w-full h-full object-cover" />}
-                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                              <Plus className="text-white w-8 h-8" />
-                            </div>
-                            <p className="absolute bottom-0 inset-x-0 bg-black/60 text-white text-[10px] p-1 truncate">{c.name}</p>
-                          </div>
-                        ))}
+                            Add to Timeline
+                          </Button>
+                        </div>
                       </div>
                     </DialogContent>
                   </Dialog>
                 </div>
+
+                {/* Content Preview Dialog */}
+                <Dialog open={!!previewContent} onOpenChange={(open) => !open && setPreviewContent(null)}>
+                  <DialogContent className="max-w-3xl bg-black border-slate-800 p-0 overflow-hidden">
+                    <DialogHeader className="sr-only"><DialogTitle>Preview</DialogTitle></DialogHeader>
+                    <div className="relative flex items-center justify-center bg-black aspect-video">
+                      {previewContent?.type === "image" ? (
+                        <img src={previewContent.readUrl} className="max-w-full max-h-[80vh] object-contain" />
+                      ) : (
+                        <video src={previewContent?.readUrl} controls autoPlay className="max-w-full max-h-[80vh]" />
+                      )}
+
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="absolute top-2 right-2 text-white/50 hover:text-white hover:bg-white/10"
+                        onClick={() => setPreviewContent(null)}
+                      >
+                        <X className="w-5 h-5" />
+                      </Button>
+                    </div>
+                    <div className="p-4 bg-slate-900 border-t border-slate-800 flex justify-between items-center text-white">
+                      <div>
+                        <p className="font-medium">{previewContent?.name}</p>
+                        <p className="text-sm text-slate-400 capitalize">{previewContent?.type}</p>
+                      </div>
+                      <Button onClick={() => {
+                        if (previewContent) {
+                          addContentToPlaylist(previewContent.id);
+                          setPreviewContent(null);
+                          setIsAddContentOpen(false); // Optional: close main too? Let's keep main open or close it? User didn't specify. Standard is add and close or stay. "Add to Timeline" implies done. But separate preview add... let's just add and close preview, keep main open.
+                          // Actually let's just Add and Close Preview, keeping Main selection flow open.
+                        }
+                      }}>
+                        Add this Item
+                      </Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
               </div>
 
               <TabsContent value="timeline" className="overflow-visible lg:overflow-y-auto lg:flex-1 lg:min-h-0 pr-2">
