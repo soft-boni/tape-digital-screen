@@ -82,10 +82,16 @@ function ProtectedRoute() {
         .on(
           "postgres_changes",
           { event: "DELETE", schema: "public", table: "user_sessions", filter: `id=eq.${sessionId}` },
-          async () => {
-            console.log("Session revoked remotely. Logging out...");
-            await supabase.auth.signOut();
-            window.location.href = "/login";
+          async (payload: any) => {
+            const currentStoredId = localStorage.getItem(SESSION_ID_KEY);
+            // Double check that the deleted ID matches our current session ID
+            if (payload.old && payload.old.id === currentStoredId) {
+              console.log("❌ Revocation Event Confirmed. Logging out...");
+              await supabase.auth.signOut();
+              window.location.href = "/login";
+            } else {
+              console.warn("Ignored revocation event for non-matching ID:", payload.old?.id);
+            }
           }
         )
         .subscribe();
