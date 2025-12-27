@@ -18,6 +18,7 @@ import { cn } from "@/shared/components/ui/utils";
 // --- Draggable Item Component ---
 const DraggableItem = ({ item, index, moveItem, removeItem, updateDuration, updateVolume, contentDetails }: any) => {
   const ref = useRef<HTMLDivElement>(null);
+  const [durationStr, setDurationStr] = useState("");
 
   const [{ isDragging }, drag, preview] = useDrag({
     type: "CONTENT",
@@ -41,13 +42,52 @@ const DraggableItem = ({ item, index, moveItem, removeItem, updateDuration, upda
   preview(drop(ref));
 
   const details = contentDetails.find((c: any) => c.id === item.contentId);
+
+  // Format Seconds to HH:mm:ss
+  const formatSecondsToHMS = (seconds: number) => {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
+  // Sync local state with prop
+  useEffect(() => {
+    setDurationStr(formatSecondsToHMS(item.duration));
+  }, [item.duration]);
+
+  // Click outside listener for volume popup - REMOVED
+
+  const handleDurationChange = (val: string) => {
+    setDurationStr(val);
+  };
+
+  const handleDurationCommit = () => {
+    // Parse HH:mm:ss to seconds
+    const parts = durationStr.split(':').map(p => parseInt(p) || 0);
+    let seconds = 0;
+    if (parts.length === 3) {
+      seconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
+    } else if (parts.length === 2) {
+      seconds = parts[0] * 60 + parts[1];
+    } else if (parts.length === 1) {
+      seconds = parts[0];
+    }
+
+    // Minimum 1 second
+    if (seconds < 1) seconds = 1;
+
+    updateDuration(index, seconds);
+    setDurationStr(formatSecondsToHMS(seconds)); // Re-format to strictly valid
+  };
+
   if (!details) return null;
 
   return (
     <div
       ref={ref}
       className={cn(
-        "flex items-center gap-3 p-3 bg-white border rounded-lg mb-2 shadow-sm transition-all hover:shadow-md",
+        "relative flex items-center gap-3 p-3 pr-10 bg-white border rounded-lg mb-2 shadow-sm transition-all hover:shadow-md group",
         isDragging ? "opacity-50 scale-95" : "opacity-100"
       )}
     >
@@ -67,31 +107,32 @@ const DraggableItem = ({ item, index, moveItem, removeItem, updateDuration, upda
         </div>
       </div>
 
-      {/* Info & Duration */}
-      <div className="flex-1 min-w-0 grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+      {/* Info, Duration & Volume */}
+      <div className="flex-1 min-w-0 flex flex-col gap-1 justify-center">
         <div className="min-w-0">
           <p className="font-semibold text-sm truncate" title={details.name}>{details.name}</p>
           <p className="text-xs text-muted-foreground uppercase">{details.type}</p>
         </div>
 
-        <div className="flex items-center gap-4">
-          {/* Duration */}
-          <div className="flex items-center gap-2 bg-slate-50 px-2 py-1 rounded border">
-            <Clock className="w-3.5 h-3.5 text-slate-500" />
+        <div className="flex flex-row items-center gap-4 mt-1">
+          {/* Duration Input (HH:mm:ss) */}
+          <div className="flex items-center gap-2 bg-slate-50 px-2 py-1 rounded border min-w-[100px]">
+            <Clock className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
             <Input
-              type="number"
-              className="w-12 h-6 text-center p-0 text-sm border-0 bg-transparent focus-visible:ring-0"
-              value={item.duration}
-              onChange={(e) => updateDuration(index, parseInt(e.target.value) || 5)}
-              min={1}
+              type="text"
+              className="w-20 h-6 text-center p-0 text-sm border-0 bg-transparent focus-visible:ring-0 font-mono tracking-wide"
+              value={durationStr}
+              onChange={(e) => handleDurationChange(e.target.value)}
+              onBlur={handleDurationCommit}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleDurationCommit(); }}
+              placeholder="00:00:00"
             />
-            <span className="text-xs text-muted-foreground">s</span>
           </div>
 
-          {/* Volume (Video Only) */}
+          {/* Volume (Video Only) - Horizontal Slider Restored */}
           {details.type === 'video' && (
-            <div className="flex items-center gap-2 flex-1 min-w-[80px]">
-              <Volume2 className="w-3.5 h-3.5 text-slate-500" />
+            <div className="flex items-center gap-2 min-w-[100px]">
+              <Volume2 className="w-4 h-4 text-slate-500 flex-shrink-0" />
               <input
                 type="range"
                 min="0"
@@ -99,15 +140,21 @@ const DraggableItem = ({ item, index, moveItem, removeItem, updateDuration, upda
                 step="10"
                 value={item.volume ?? 100}
                 onChange={(e) => updateVolume(index, parseInt(e.target.value))}
-                className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-slate-600"
+                className="w-24 h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-slate-600"
               />
             </div>
           )}
         </div>
       </div>
 
-      <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-red-500 hover:bg-red-50" onClick={() => removeItem(index)}>
-        <Trash2 className="w-4 h-4" />
+      {/* Absolute Delete Button - Top Right */}
+      <Button
+        variant="ghost"
+        size="icon"
+        className="absolute top-1 right-1 h-6 w-6 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-full"
+        onClick={() => removeItem(index)}
+      >
+        <X className="w-3 h-3" />
       </Button>
     </div>
   );
@@ -578,12 +625,31 @@ export function ScreenEditor() {
     setPlaylist(prev => prev.filter((_, i) => i !== index));
   };
 
-  const addContentToPlaylist = (contentId: string) => {
+  const addContentToPlaylist = async (contentId: string) => {
+    const content = allContent.find(c => c.id === contentId);
+    let duration = 10;
+
+    if (content?.type === 'video') {
+      try {
+        const vid = document.createElement('video');
+        vid.src = content.readUrl;
+        await new Promise((resolve, reject) => {
+          vid.onloadedmetadata = () => resolve(vid.duration);
+          vid.onerror = reject;
+        });
+        if (vid.duration && !isNaN(vid.duration)) {
+          duration = Math.round(vid.duration);
+        }
+      } catch (e) {
+        console.error("Failed to load video duration", e);
+      }
+    }
+
     setPlaylist(prev => [
       ...prev,
       {
         contentId,
-        duration: 10,
+        duration,
         volume: 100
         // No per-item transition anymore
       }
@@ -668,6 +734,14 @@ export function ScreenEditor() {
 
   if (loading) {
     return <ProgramEditorSkeleton />;
+  }
+
+  if (!screen) {
+    return <div className="flex items-center justify-center h-screen">Program not found or access denied.</div>;
+  }
+
+  if (!screen) {
+    return <div className="flex items-center justify-center h-screen">Program not found or access denied.</div>;
   }
 
   return (

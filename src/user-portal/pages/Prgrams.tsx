@@ -179,7 +179,15 @@ export function Screens() {
                             : [...formData.selectedContent, item.id]
                         });
                       }}>
-                      <img src={item.readUrl} className={`w-full h-full object-cover ${formData.selectedContent.includes(item.id) ? 'opacity-50' : ''}`} />
+                      {item.type === 'video' ? (
+                        <video src={item.readUrl} className={`w-full h-full object-cover ${formData.selectedContent.includes(item.id) ? 'opacity-50' : ''}`} muted />
+                      ) : item.type === 'audio' ? (
+                        <div className={`w-full h-full flex items-center justify-center bg-indigo-50 ${formData.selectedContent.includes(item.id) ? 'opacity-50' : ''}`}>
+                          <Monitor className="w-8 h-8 text-indigo-300" /> {/* Use generic icon for audio for now */}
+                        </div>
+                      ) : (
+                        <img src={item.readUrl} className={`w-full h-full object-cover ${formData.selectedContent.includes(item.id) ? 'opacity-50' : ''}`} />
+                      )}
                       {formData.selectedContent.includes(item.id) && (
                         <div className="absolute inset-0 flex items-center justify-center bg-indigo-500/20">
                           <div className="w-4 h-4 bg-indigo-600 rounded-full" />
