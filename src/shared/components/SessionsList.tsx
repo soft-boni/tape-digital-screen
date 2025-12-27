@@ -5,6 +5,17 @@ import { Laptop, Smartphone, Trash2, Globe, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/components/ui/card";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+    AlertDialogTrigger,
+} from "@/shared/components/ui/alert-dialog";
 
 interface Session {
     id: string;
@@ -58,6 +69,24 @@ export function SessionsList() {
         }
     };
 
+    const revokeAllOthers = async () => {
+        if (!currentSessionId) return;
+
+        try {
+            const { error } = await supabase
+                .from("user_sessions")
+                .delete()
+                .neq("id", currentSessionId);
+
+            if (error) throw error;
+
+            setSessions((prev) => prev.filter((s) => s.id === currentSessionId));
+            toast.success("All other sessions revoked");
+        } catch (err) {
+            toast.error("Failed to revoke sessions");
+        }
+    };
+
     useEffect(() => {
         fetchSessions();
 
@@ -96,67 +125,112 @@ export function SessionsList() {
                     Manage devices that are currently logged into your account.
                 </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-                {sessions.map((session) => (
-                    <div
-                        key={session.id}
-                        className={`flex items-start justify-between p-4 rounded-lg border ${session.is_current ? "bg-indigo-50 border-indigo-200" : "bg-white border-slate-200"
-                            }`}
-                    >
-                        <div className="flex gap-4">
-                            <div className={`p-2 rounded-full ${session.is_current ? "bg-indigo-100" : "bg-slate-100"}`}>
-                                {getDeviceIcon(session.device_info || "")}
-                            </div>
-                            <div>
-                                <div className="flex items-center gap-2">
-                                    <p className="font-medium text-slate-900">
-                                        {session.device_info || "Unknown Device"}
-                                    </p>
-                                    {session.is_current && (
-                                        <span className="text-[10px] bg-indigo-200 text-indigo-700 px-1.5 py-0.5 rounded-full font-semibold">
-                                            CURRENT
-                                        </span>
-                                    )}
+            <CardContent className="space-y-6">
+                <div className="space-y-4">
+                    {sessions.map((session) => (
+                        <div
+                            key={session.id}
+                            className={`flex items-start justify-between p-4 rounded-lg border ${session.is_current ? "bg-indigo-50 border-indigo-200" : "bg-white border-slate-200"
+                                }`}
+                        >
+                            <div className="flex gap-4">
+                                <div className={`p-2 rounded-full ${session.is_current ? "bg-indigo-100" : "bg-slate-100"}`}>
+                                    {getDeviceIcon(session.device_info || "")}
                                 </div>
-                                <div className="flex items-center gap-4 mt-1 text-xs text-slate-500">
-                                    <span className="flex items-center gap-1" title="Last Active">
-                                        <ClockIcon className="w-3 h-3" />
-                                        {formatDistanceToNow(new Date(session.last_active), { addSuffix: true })}
-                                    </span>
-                                    {session.ip_address && (
-                                        <span className="flex items-center gap-1" title="IP Address">
-                                            <Globe className="w-3 h-3" />
-                                            {session.ip_address}
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <p className="font-medium text-slate-900">
+                                            {session.device_info || "Unknown Device"}
+                                        </p>
+                                        {session.is_current && (
+                                            <span className="text-[10px] bg-indigo-200 text-indigo-700 px-1.5 py-0.5 rounded-full font-semibold">
+                                                CURRENT
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div className="flex items-center gap-4 mt-1 text-xs text-slate-500">
+                                        <span className="flex items-center gap-1" title="Last Active">
+                                            <ClockIcon className="w-3 h-3" />
+                                            {formatDistanceToNow(new Date(session.last_active), { addSuffix: true })}
                                         </span>
-                                    )}
-                                </div>
+                                        {session.ip_address && (
+                                            <span className="flex items-center gap-1" title="IP Address">
+                                                <Globe className="w-3 h-3" />
+                                                {session.ip_address}
+                                            </span>
+                                        )}
+                                    </div>
 
-                                {!session.is_current && (
-                                    <p className="text-xs text-slate-400 mt-1">
-                                        Assigned: {new Date(session.created_at).toLocaleDateString()}
-                                    </p>
-                                )}
+                                    {!session.is_current && (
+                                        <p className="text-xs text-slate-400 mt-1">
+                                            Assigned: {new Date(session.created_at).toLocaleDateString()}
+                                        </p>
+                                    )}
+                                </div>
                             </div>
+
+                            {!session.is_current && (
+                                <AlertDialog>
+                                    <AlertDialogTrigger asChild>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="text-red-500 hover:text-red-600 hover:bg-red-50"
+                                        >
+                                            <Trash2 className="w-4 h-4 mr-2" />
+                                            Revoke
+                                        </Button>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                            <AlertDialogTitle>Revoke Session?</AlertDialogTitle>
+                                            <AlertDialogDescription>
+                                                This will log out the device "{session.device_info}". This action cannot be undone.
+                                            </AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                            <AlertDialogAction onClick={() => revokeSession(session.id)} className="bg-red-600 hover:bg-red-700">
+                                                Revoke
+                                            </AlertDialogAction>
+                                        </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                </AlertDialog>
+                            )}
                         </div>
-
-                        {!session.is_current && (
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                className="text-red-500 hover:text-red-600 hover:bg-red-50"
-                                onClick={() => revokeSession(session.id)}
-                            >
-                                <Trash2 className="w-4 h-4 mr-2" />
-                                Revoke
-                            </Button>
-                        )}
-                    </div>
-                ))}
+                    ))}
+                </div>
 
                 {sessions.length === 0 && (
                     <div className="text-center py-6 text-slate-500 bg-slate-50 rounded-lg">
                         <AlertCircle className="w-8 h-8 mx-auto mb-2 text-slate-300" />
                         <p>No active sessions found.</p>
+                    </div>
+                )}
+
+                {sessions.length > 1 && (
+                    <div className="pt-4 border-t flex justify-end">
+                        <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                                <Button variant="outline" className="text-red-600 border-red-200 hover:bg-red-50">
+                                    Sign out from all other devices
+                                </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                                <AlertDialogHeader>
+                                    <AlertDialogTitle>Sign out all other devices?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                        You will remain logged in on this device, but all other active sessions will be terminated immediately.
+                                    </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction onClick={revokeAllOthers} className="bg-red-600 hover:bg-red-700">
+                                        Sign Out All
+                                    </AlertDialogAction>
+                                </AlertDialogFooter>
+                            </AlertDialogContent>
+                        </AlertDialog>
                     </div>
                 )}
             </CardContent>
